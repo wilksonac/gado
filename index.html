@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gestor Pecuária à Meia (Online)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel para JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase SDKs (Versão Compat - Mais estável para arquivo único) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        /* Ajustes Mobile Específicos */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
+        .tab-content { padding-bottom: 80px; } /* Espaço para menu inferior */
+        input, select, textarea { font-size: 16px !important; } /* Evita zoom no iOS */
+        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #16a34a; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- Configuração do Firebase ---
+        
+        // 1. Definição das Credenciais (Híbrido: Preview vs Produção)
+        const getFirebaseConfig = () => {
+            if (typeof __firebase_config !== 'undefined') {
+                return JSON.parse(__firebase_config);
+            }
+            // Suas credenciais oficiais (gado-a54f1)
+            return {
+                apiKey: "AIzaSyBr0MWlrPgsJX1Mgg8gZN5Np6ZqdQabrHs",
+                authDomain: "gado-a54f1.firebaseapp.com",
+                projectId: "gado-a54f1",
+                storageBucket: "gado-a54f1.firebasestorage.app",
+                messagingSenderId: "1030310346266",
+                appId: "1:1030310346266:web:ffe5bc0dc02c84b71cdba3"
+            };
+        };
+
+        // 2. Inicialização Segura
+        if (!firebase.apps.length) {
+            firebase.initializeApp(getFirebaseConfig());
+        }
+        
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        
+        // Define o ID do App para organização dos dados
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'gado-a54f1';
+
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Componentes de UI ---
+        const Card = ({ children, className = "" }) => (
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 ${className}`}>
+                {children}
+            </div>
+        );
+
+        const Button = ({ children, onClick, variant = "primary", className = "", type="button", disabled=false, isLoading=false }) => {
+            const baseStyle = "w-full py-3 px-4 rounded-lg font-medium transition-all active:scale-95 flex items-center justify-center gap-2";
+            const variants = {
+                primary: "bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-200",
+                secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200",
+                danger: "bg-red-50 text-red-600 border border-red-100 hover:bg-red-100",
+                outline: "border-2 border-green-600 text-green-700 hover:bg-green-50"
+            };
+            return (
+                <button 
+                    type={type} 
+                    onClick={onClick} 
+                    disabled={disabled || isLoading}
+                    className={`${baseStyle} ${variants[variant]} ${className} ${disabled || isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                    {isLoading ? <div className="spinner"></div> : children}
+                </button>
+            );
+        };
+
+        const InputGroup = ({ label, type = "text", value, onChange, placeholder, step, required = false, min }) => (
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+                <input
+                    type={type}
+                    value={value}
+                    onChange={onChange}
+                    placeholder={placeholder}
+                    step={step}
+                    min={min}
+                    required={required}
+                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-colors bg-gray-50 focus:bg-white"
+                />
+            </div>
+        );
+
+        // --- Funções Auxiliares ---
+        const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+        const formatNumber = (val) => new Intl.NumberFormat('pt-BR').format(val);
+
+        // --- Componente Principal ---
+        const App = () => {
+            // Estados Principais
+            const [user, setUser] = useState(null);
+            const [view, setView] = useState('dashboard'); // dashboard, entry, sale, death, history
+            const [lotes, setLotes] = useState([]);
+            const [historico, setHistorico] = useState([]);
+            const [toast, setToast] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            // 1. Inicializar Autenticação
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        // Verifica se existe token customizado injetado pelo ambiente
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            // Fallback para autenticação anônima se não houver token
+                            await auth.signInAnonymously();
+                        }
+                    } catch (error) {
+                        console.error("Erro na autenticação:", error);
+                        showToast("Erro ao conectar com servidor.", "error");
+                        setLoading(false);
+                    }
+                };
+                
+                initAuth();
+                
+                const unsubscribe = auth.onAuthStateChanged((u) => {
+                    setUser(u);
+                    if (!u) setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 2. Carregar Dados do Firestore (Lotes e Histórico)
+            useEffect(() => {
+                if (!user) return;
+
+                setLoading(true);
+                
+                // Paths: /artifacts/{appId}/users/{userId}/{collection}
+                // Usando sintaxe Compat (v8)
+                const lotesRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes');
+                const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
+
+                // Listener Lotes
+                const unsubscribeLotes = lotesRef.onSnapshot((snapshot) => {
+                    const loadedLotes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // Ordenar localmente por data de entrada (mais recente primeiro)
+                    loadedLotes.sort((a, b) => new Date(b.dataEntrada) - new Date(a.dataEntrada));
+                    setLotes(loadedLotes);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Erro ao carregar lotes:", error);
+                    setLoading(false);
+                });
+
+                // Listener Histórico
+                const unsubscribeHist = histRef.onSnapshot((snapshot) => {
+                    const loadedHist = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // Ordenar localmente por data (mais recente primeiro)
+                    loadedHist.sort((a, b) => new Date(b.data) - new Date(a.data));
+                    setHistorico(loadedHist);
+                }, (error) => console.error(error));
+
+                return () => {
+                    unsubscribeLotes();
+                    unsubscribeHist();
+                };
+            }, [user]);
+
+            const showToast = (msg, type = 'success') => {
+                setToast({ msg, type });
+                setTimeout(() => setToast(null), 3000);
+            };
+
+            // --- Lógica de Negócio (Firestore Actions) ---
+
+            const handleCompra = async (data) => {
+                if (!user) return;
+                try {
+                    const lotesRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes');
+                    const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
+
+                    const novoLote = {
+                        ativo: true,
+                        dataEntrada: data.data,
+                        criador: data.criador,
+                        fazenda: data.fazenda,
+                        qtdInicial: Number(data.qtd),
+                        qtdAtual: Number(data.qtd),
+                        pesoTotalInicial: Number(data.pesoTotal), // em KG
+                        valorCompraTotal: Number(data.valorTotal),
+                        observacoes: data.obs,
+                        custoMedioCabeca: Number(data.valorTotal) / Number(data.qtd),
+                        createdAt: new Date().toISOString()
+                    };
+
+                    const docRef = await lotesRef.add(novoLote);
+                    
+                    // Add Histórico
+                    await histRef.add({
+                        tipo: 'COMPRA',
+                        data: data.data,
+                        descricao: `Compra de ${data.qtd} cb - ${data.criador}`,
+                        detalhes: { ...novoLote, id: docRef.id },
+                        valor: -Number(data.valorTotal),
+                        createdAt: new Date().toISOString()
+                    });
+
+                    setView('dashboard');
+                    showToast('Lote salvo na nuvem!');
+                } catch (err) {
+                    console.error(err);
+                    showToast('Erro ao salvar compra.', 'error');
+                }
+            };
+
+            const handleMorte = async (data) => {
+                if (!user) return;
+                try {
+                    const lote = lotes.find(l => l.id === data.loteId);
+                    if (!lote) return;
+
+                    const novaQtd = lote.qtdAtual - Number(data.qtd);
+                    const loteRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes').doc(lote.id);
+                    
+                    // Atualiza o lote
+                    await loteRef.update({
+                        qtdAtual: novaQtd,
+                        ativo: novaQtd > 0
+                    });
+
+                    // Add Histórico
+                    const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
+                    await histRef.add({
+                        tipo: 'MORTE',
+                        data: data.data,
+                        descricao: `Morte de ${data.qtd} animal(is) - ${lote.criador}`,
+                        detalhes: { ...data, loteSnapshot: lote },
+                        valor: 0,
+                        createdAt: new Date().toISOString()
+                    });
+
+                    setView('dashboard');
+                    showToast('Morte registrada.');
+                } catch (err) {
+                    console.error(err);
+                    showToast('Erro ao registrar morte.', 'error');
+                }
+            };
+
+            const handleVenda = async (data) => {
+                if (!user) return;
+                try {
+                    const lote = lotes.find(l => l.id === data.loteId);
+                    if (!lote) return;
+
+                    // Cálculos
+                    const qtdVendida = Number(data.qtd);
+                    const valorBrutoVenda = Number(data.valorTotalVenda);
+                    const custosTotais = Number(data.frete) + Number(data.balanca) + Number(data.outrosCustos);
+                    const valorLiquidoVenda = valorBrutoVenda - custosTotais;
+                    
+                    // Custo Base proporcional
+                    const custoBaseAnimaisVendidos = lote.custoMedioCabeca * qtdVendida;
+                    const lucroOperacao = valorLiquidoVenda - custoBaseAnimaisVendidos;
+
+                    let parteCriador = 0;
+                    let parteMinha = 0;
+
+                    if (lucroOperacao > 0) {
+                        parteCriador = lucroOperacao * 0.60;
+                        parteMinha = custoBaseAnimaisVendidos + (lucroOperacao * 0.40); 
+                    } else {
+                        parteCriador = 0;
+                        parteMinha = valorLiquidoVenda; 
+                    }
+
+                    // Dados Peso
+                    const pesoMedioEntrada = lote.pesoTotalInicial / lote.qtdInicial;
+                    const pesoMedioSaida = Number(data.pesoTotalVenda) / qtdVendida;
+
+                    // Atualizar Estoque no Firestore
+                    const novaQtd = lote.qtdAtual - qtdVendida;
+                    const loteRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes').doc(lote.id);
+                    
+                    await loteRef.update({
+                        qtdAtual: novaQtd,
+                        ativo: novaQtd > 0
+                    });
+
+                    const resumoVenda = {
+                        ...data,
+                        custoBase: custoBaseAnimaisVendidos,
+                        custosOperacionais: custosTotais,
+                        lucroTotal: lucroOperacao,
+                        pagamentoCriador: parteCriador,
+                        meuRetorno: parteMinha,
+                        pesoMedioEntrada: pesoMedioEntrada,
+                        pesoMedioSaida: pesoMedioSaida,
+                        ganhoPesoTotal: (pesoMedioSaida - pesoMedioEntrada) * qtdVendida,
+                        loteSnapshot: lote
+                    };
+
+                    const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
+                    await histRef.add({
+                        tipo: 'VENDA',
+                        data: data.data,
+                        descricao: `Venda ${qtdVendida} cb - Lote ${lote.criador}`,
+                        detalhes: resumoVenda,
+                        valor: parteMinha,
+                        createdAt: new Date().toISOString()
+                    });
+
+                    setView('dashboard');
+                    showToast('Venda realizada com sucesso!');
+                } catch (err) {
+                    console.error(err);
+                    showToast('Erro ao registrar venda.', 'error');
+                }
+            };
+
+            // --- Renderização de Telas ---
+
+            const renderDashboard = () => {
+                if (loading) return <div className="flex justify-center py-10"><div className="spinner"></div></div>;
+
+                const totalCabecas = lotes.reduce((acc, l) => l.ativo ? acc + l.qtdAtual : acc, 0);
+                const valorInvestido = lotes.reduce((acc, l) => l.ativo ? acc + (l.custoMedioCabeca * l.qtdAtual) : acc, 0);
+
+                return (
+                    <div className="space-y-6 animate-fade-in">
+                        <header className="flex justify-between items-center mb-6">
+                            <h1 className="text-2xl font-bold text-gray-800">Visão Geral</h1>
+                            <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Online
+                            </div>
+                        </header>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <Card className="bg-blue-50 border-blue-100">
+                                <p className="text-sm text-blue-600 font-medium">Rebanho Atual</p>
+                                <p className="text-3xl font-bold text-blue-900">{totalCabecas}</p>
+                                <p className="text-xs text-blue-400">cabeças</p>
+                            </Card>
+                            <Card className="bg-green-50 border-green-100">
+                                <p className="text-sm text-green-600 font-medium">Invest. Est.</p>
+                                <p className="text-xl font-bold text-green-900">{new Intl.NumberFormat('pt-BR', { notation: "compact", compactDisplay: "short", style: "currency", currency: "BRL" }).format(valorInvestido)}</p>
+                                <p className="text-xs text-green-400">Baseado na compra</p>
+                            </Card>
+                        </div>
+
+                        <div className="mt-6">
+                            <h2 className="text-lg font-semibold text-gray-700 mb-3">Acesso Rápido</h2>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Button onClick={() => setView('entry')} variant="primary" className="h-20 flex-col">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                    Nova Compra
+                                </Button>
+                                <Button onClick={() => setView('sale')} variant="secondary" className="h-20 flex-col bg-white border-green-200 text-green-700">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                    Registrar Venda
+                                </Button>
+                            </div>
+                            <div className="mt-3">
+                                <Button onClick={() => setView('death')} variant="danger" className="w-full bg-red-50 text-red-600 border border-red-200">
+                                    <svg className="mr-2" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                    Informar Morte
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="mt-6">
+                            <h2 className="text-lg font-semibold text-gray-700 mb-3">Lotes Ativos</h2>
+                            {lotes.filter(l => l.ativo).length === 0 ? (
+                                <p className="text-gray-400 text-center py-4 bg-gray-100 rounded-lg border border-dashed border-gray-300">Nenhum lote ativo no banco de dados.</p>
+                            ) : (
+                                lotes.filter(l => l.ativo).map(lote => (
+                                    <Card key={lote.id} className="mb-3 border-l-4 border-l-green-500">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h3 className="font-bold text-gray-800">{lote.criador}</h3>
+                                                <p className="text-sm text-gray-500">{lote.fazenda}</p>
+                                            </div>
+                                            <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold">{lote.qtdAtual} cb</span>
+                                        </div>
+                                        <div className="mt-2 text-sm text-gray-600 flex justify-between">
+                                            <span>Entrada: {new Date(lote.dataEntrada + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                            <span>Média Compra: {formatCurrency(lote.custoMedioCabeca)}</span>
+                                        </div>
+                                    </Card>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            // Form de Compra
+            const CompraForm = () => {
+                const [form, setForm] = useState({
+                    data: new Date().toISOString().split('T')[0],
+                    criador: '',
+                    fazenda: '',
+                    qtd: '',
+                    pesoTotal: '', // KG
+                    valorTotal: '',
+                    obs: ''
+                });
+                const [saving, setSaving] = useState(false);
+
+                const handleSubmit = async (e) => {
+                    e.preventDefault();
+                    setSaving(true);
+                    await handleCompra(form);
+                    setSaving(false);
+                };
+
+                const pesoMedio = form.qtd && form.pesoTotal ? (form.pesoTotal / form.qtd).toFixed(1) : 0;
+                const valorMedio = form.qtd && form.valorTotal ? (form.valorTotal / form.qtd).toFixed(2) : 0;
+
+                return (
+                    <div className="animate-fade-in pb-20">
+                         <header className="flex items-center mb-6">
+                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            </button>
+                            <h1 className="text-xl font-bold text-gray-800">Nova Compra (Lote)</h1>
+                        </header>
+                        
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="bg-white p-4 rounded-lg shadow-sm">
+                                <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wider">Dados do Parceiro</h3>
+                                <InputGroup label="Data da Compra" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
+                                <InputGroup label="Nome do Criador/Parceiro" value={form.criador} onChange={e => setForm({...form, criador: e.target.value})} placeholder="Ex: João da Silva" required />
+                                <InputGroup label="Fazenda de Destino" value={form.fazenda} onChange={e => setForm({...form, fazenda: e.target.value})} placeholder="Ex: Fazenda Santa Rita" required />
+                            </div>
+
+                            <div className="bg-white p-4 rounded-lg shadow-sm">
+                                <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wider">Dados dos Animais</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <InputGroup label="Qtd. Cabeças" type="tel" value={form.qtd} onChange={e => setForm({...form, qtd: e.target.value})} placeholder="0" required />
+                                    <InputGroup label="Peso Total (KG)" type="tel" value={form.pesoTotal} onChange={e => setForm({...form, pesoTotal: e.target.value})} placeholder="0.00" required />
+                                </div>
+                                <div className="bg-gray-50 p-3 rounded mb-4 text-sm text-gray-600">
+                                    Média estimada: <strong>{pesoMedio} kg</strong> / {(pesoMedio / 30).toFixed(1)} @
+                                </div>
+                                
+                                <InputGroup label="Valor Total da Compra (R$)" type="number" step="0.01" value={form.valorTotal} onChange={e => setForm({...form, valorTotal: e.target.value})} placeholder="0,00" required />
+                                <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+                                    Preço médio: <strong>{formatCurrency(valorMedio)}</strong> por cabeça
+                                </div>
+                            </div>
+
+                            <InputGroup label="Observações" type="text" value={form.obs} onChange={e => setForm({...form, obs: e.target.value})} placeholder="Ex: Gado nelore, magro..." />
+
+                            <Button type="submit" className="mt-6" isLoading={saving}>Salvar Compra na Nuvem</Button>
+                        </form>
+                    </div>
+                );
+            };
+
+            // Form de Venda
+            const VendaForm = () => {
+                const lotesAtivos = lotes.filter(l => l.ativo);
+                const [form, setForm] = useState({
+                    loteId: '',
+                    data: new Date().toISOString().split('T')[0],
+                    qtd: '',
+                    pesoTotalVenda: '',
+                    valorTotalVenda: '',
+                    frete: '0',
+                    balanca: '0',
+                    outrosCustos: '0'
+                });
+                const [saving, setSaving] = useState(false);
+
+                const loteSelecionado = lotes.find(l => l.id === form.loteId);
+
+                // --- Lógica de Pesos e Médias ---
+                const qtdVendida = Number(form.qtd) || 0;
+                const pesoTotalVenda = Number(form.pesoTotalVenda) || 0;
+                
+                const pesoMedioEntrada = loteSelecionado ? (loteSelecionado.pesoTotalInicial / loteSelecionado.qtdInicial) : 0;
+                const pesoMedioSaida = qtdVendida > 0 ? (pesoTotalVenda / qtdVendida) : 0;
+                const ganhoPesoPorCabeca = pesoMedioSaida - pesoMedioEntrada;
+                const ganhoPesoTotal = ganhoPesoPorCabeca * qtdVendida;
+
+                // --- Lógica Financeira ---
+                const custoBase = loteSelecionado ? loteSelecionado.custoMedioCabeca * qtdVendida : 0;
+                
+                const receitaLiquida = (Number(form.valorTotalVenda) || 0) - (Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos));
+                const lucro = receitaLiquida - custoBase;
+                
+                const parteCriador = lucro > 0 ? lucro * 0.60 : 0;
+                const parteMinha = lucro > 0 ? custoBase + (lucro * 0.40) : receitaLiquida;
+
+                const handleSubmit = async (e) => {
+                    e.preventDefault();
+                    setSaving(true);
+                    await handleVenda(form);
+                    setSaving(false);
+                };
+
+                if (loading) return <div className="flex justify-center p-10"><div className="spinner"></div></div>;
+
+                if (lotesAtivos.length === 0) return (
+                    <div className="text-center mt-10 p-4">
+                        <p className="text-gray-500 mb-4">Não há lotes com animais disponíveis para venda.</p>
+                        <Button onClick={() => setView('dashboard')}>Voltar</Button>
+                    </div>
+                );
+
+                return (
+                    <div className="animate-fade-in pb-20">
+                        <header className="flex items-center mb-6">
+                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            </button>
+                            <h1 className="text-xl font-bold text-gray-800">Registrar Venda</h1>
+                        </header>
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            
+                            {/* Passo 1: Seleção de Lote */}
+                            <div className="bg-white p-4 rounded-lg shadow-sm">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Selecione o Lote</label>
+                                <select 
+                                    className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg mb-4"
+                                    value={form.loteId}
+                                    onChange={e => setForm({...form, loteId: e.target.value, qtd: ''})}
+                                    required
+                                >
+                                    <option value="">Selecione...</option>
+                                    {lotesAtivos.map(l => (
+                                        <option key={l.id} value={l.id}>{l.criador} ({l.qtdAtual} cabeças) - {l.fazenda}</option>
+                                    ))}
+                                </select>
+                                
+                                <InputGroup label="Data da Venda" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
+                            </div>
+
+                            {form.loteId && (
+                                <>
+                                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                                        <h3 className="text-sm font-semibold text-green-700 mb-4 uppercase">Dados da Negociação</h3>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <InputGroup 
+                                                label="Qtd. Vendida" 
+                                                type="tel" 
+                                                value={form.qtd} 
+                                                onChange={e => {
+                                                    const val = Math.min(Number(e.target.value), loteSelecionado.qtdAtual);
+                                                    setForm({...form, qtd: val});
+                                                }} 
+                                                placeholder={`Máx: ${loteSelecionado.qtdAtual}`}
+                                                required 
+                                            />
+                                            <InputGroup label="Peso Total Venda (KG)" type="tel" value={form.pesoTotalVenda} onChange={e => setForm({...form, pesoTotalVenda: e.target.value})} placeholder="Peso Balança" required />
+                                        </div>
+
+                                        {/* Exibição das Médias de Peso */}
+                                        {qtdVendida > 0 && pesoTotalVenda > 0 && (
+                                            <div className="mb-4 bg-blue-50 p-3 rounded text-sm text-blue-800 border border-blue-100">
+                                                <div className="flex justify-between mb-1">
+                                                    <span>Média Entrada:</span>
+                                                    <strong>{formatNumber(pesoMedioEntrada.toFixed(1))} kg</strong>
+                                                </div>
+                                                <div className="flex justify-between mb-1">
+                                                    <span>Média Saída:</span>
+                                                    <strong>{formatNumber(pesoMedioSaida.toFixed(1))} kg</strong>
+                                                </div>
+                                                <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 font-bold">
+                                                    <span>Ganho Peso Total:</span>
+                                                    <span>+{formatNumber(ganhoPesoTotal.toFixed(1))} kg</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <InputGroup label="Valor TOTAL da Venda (R$)" type="number" step="0.01" value={form.valorTotalVenda} onChange={e => setForm({...form, valorTotalVenda: e.target.value})} placeholder="Valor Bruto" required />
+                                    </div>
+
+                                    <div className="bg-white p-4 rounded-lg shadow-sm border border-orange-100">
+                                        <h3 className="text-sm font-semibold text-orange-700 mb-4 uppercase">Custos / Descontos</h3>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <InputGroup label="Frete" type="tel" value={form.frete} onChange={e => setForm({...form, frete: e.target.value})} />
+                                            <InputGroup label="Balança" type="tel" value={form.balanca} onChange={e => setForm({...form, balanca: e.target.value})} />
+                                            <InputGroup label="Outros" type="tel" value={form.outrosCustos} onChange={e => setForm({...form, outrosCustos: e.target.value})} />
+                                        </div>
+                                    </div>
+
+                                    {/* Card de Resumo Financeiro (Preview) */}
+                                    <div className="bg-gray-800 text-white p-4 rounded-lg shadow-lg mt-4">
+                                        <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase border-b border-gray-600 pb-2">Simulação de Acerto</h3>
+                                        
+                                        <div className="flex justify-between text-sm mb-1">
+                                            <span>Valor Bruto:</span>
+                                            <span>{formatCurrency(form.valorTotalVenda || 0)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm mb-1 text-red-300">
+                                            <span>(-) Custos Totais:</span>
+                                            <span>{formatCurrency((Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos)))}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm mb-3 text-red-300">
+                                            <span>(-) Custo Original (Base {qtdVendida}cb):</span>
+                                            <span>{formatCurrency(custoBase)}</span>
+                                        </div>
+                                        
+                                        <div className="border-t border-gray-600 my-2 pt-2 flex justify-between font-bold text-green-400">
+                                            <span>Lucro Financeiro:</span>
+                                            <span>{formatCurrency(lucro)}</span>
+                                        </div>
+
+                                        <div className="mt-4 bg-gray-700 p-3 rounded-lg">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-sm text-gray-300">Parceiro (60% Lucro):</span>
+                                                <span className="font-bold text-lg">{formatCurrency(parteCriador)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center border-t border-gray-600 pt-2">
+                                                <span className="text-sm text-gray-300">Minha Parte (Custo + 40%):</span>
+                                                <span className="font-bold text-xl text-green-400">{formatCurrency(parteMinha)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <Button type="submit" variant="primary" className="mt-4 mb-8" isLoading={saving}>Confirmar Venda e Baixar Estoque</Button>
+                                </>
+                            )}
+                        </form>
+                    </div>
+                );
+            };
+
+            // Form de Morte
+            const MorteForm = () => {
+                const lotesAtivos = lotes.filter(l => l.ativo);
+                const [form, setForm] = useState({ loteId: '', data: new Date().toISOString().split('T')[0], qtd: '1', obs: '' });
+                const [saving, setSaving] = useState(false);
+
+                const handleSubmit = async (e) => {
+                    e.preventDefault();
+                    setSaving(true);
+                    await handleMorte(form);
+                    setSaving(false);
+                };
+
+                if (loading) return <div className="flex justify-center p-10"><div className="spinner"></div></div>;
+
+                if (lotesAtivos.length === 0) return <div className="p-4 text-center text-gray-500">Sem gado no estoque. <Button onClick={()=>setView('dashboard')} className="mt-4">Voltar</Button></div>;
+
+                return (
+                    <div className="animate-fade-in pb-20">
+                         <header className="flex items-center mb-6">
+                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            </button>
+                            <h1 className="text-xl font-bold text-red-600">Registrar Morte</h1>
+                        </header>
+                        <form onSubmit={handleSubmit} className="bg-white p-4 rounded-lg shadow-sm space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Lote</label>
+                                <select className="w-full p-3 bg-gray-50 border rounded-lg" value={form.loteId} onChange={e => setForm({...form, loteId: e.target.value})} required>
+                                    <option value="">Selecione...</option>
+                                    {lotesAtivos.map(l => <option key={l.id} value={l.id}>{l.criador} - Estoque: {l.qtdAtual}</option>)}
+                                </select>
+                            </div>
+                            <InputGroup label="Data" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
+                            <InputGroup label="Quantidade Morta" type="tel" value={form.qtd} onChange={e => setForm({...form, qtd: e.target.value})} required />
+                            <InputGroup label="Causa / Observação" value={form.obs} onChange={e => setForm({...form, obs: e.target.value})} placeholder="Picada de cobra, doença, etc." required />
+                            <Button type="submit" variant="danger" isLoading={saving}>Confirmar Baixa</Button>
+                        </form>
+                    </div>
+                );
+            };
+
+            // Tela de Histórico
+            const HistoricoView = () => {
+                if (loading) return <div className="flex justify-center p-10"><div className="spinner"></div></div>;
+
+                return (
+                    <div className="animate-fade-in pb-20">
+                        <header className="flex items-center mb-6">
+                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            </button>
+                            <h1 className="text-xl font-bold text-gray-800">Histórico e Finanças</h1>
+                        </header>
+
+                        <div className="space-y-4">
+                            {historico.length === 0 ? (
+                                <p className="text-center text-gray-500 py-8">Nenhuma movimentação registrada.</p>
+                            ) : (
+                                historico.map(item => (
+                                    <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-l-gray-300 relative overflow-hidden">
+                                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                                            item.tipo === 'VENDA' ? 'bg-green-500' : 
+                                            item.tipo === 'COMPRA' ? 'bg-blue-500' : 'bg-red-500'
+                                        }`}></div>
+                                        
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${
+                                                item.tipo === 'VENDA' ? 'bg-green-100 text-green-800' : 
+                                                item.tipo === 'COMPRA' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
+                                            }`}>{item.tipo}</span>
+                                            <span className="text-xs text-gray-500">{new Date(item.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                        </div>
+                                        
+                                        <h3 className="font-semibold text-gray-800">{item.descricao}</h3>
+                                        
+                                        {item.tipo === 'VENDA' && (
+                                            <div className="mt-2 text-sm bg-gray-50 p-2 rounded">
+                                                {item.detalhes.pesoMedioSaida && (
+                                                     <div className="flex justify-between text-xs text-gray-500 mb-2 border-b border-gray-200 pb-1">
+                                                        <span>Ganho Peso:</span> 
+                                                        <span>{formatNumber((item.detalhes.ganhoPesoTotal).toFixed(1))} kg ({(item.detalhes.pesoMedioSaida - item.detalhes.pesoMedioEntrada).toFixed(1)}/cb)</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between"><span>Bruto:</span> <span>{formatCurrency(item.detalhes.valorTotalVenda)}</span></div>
+                                                <div className="flex justify-between text-red-500"><span>Custos:</span> <span>-{formatCurrency(item.detalhes.custosOperacionais)}</span></div>
+                                                <div className="flex justify-between font-bold border-t border-gray-200 mt-1 pt-1">
+                                                    <span>Parte Criador:</span> <span className="text-gray-600">{formatCurrency(item.detalhes.pagamentoCriador)}</span>
+                                                </div>
+                                                <div className="flex justify-between font-bold text-green-700">
+                                                    <span>Minha Parte:</span> <span>{formatCurrency(item.detalhes.meuRetorno)}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {item.tipo === 'COMPRA' && (
+                                            <div className="mt-2 text-sm text-gray-600">
+                                                Investimento: <strong>{formatCurrency(Math.abs(item.valor))}</strong>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- Renderização Principal ---
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-gray-50 relative">
+                    {/* Toast Notification */}
+                    {toast && (
+                        <div className={`fixed top-4 left-4 right-4 z-50 p-4 rounded shadow-lg text-white text-center transform transition-all duration-300 ${toast.type === 'error' ? 'bg-red-500' : 'bg-gray-800'}`}>
+                            {toast.msg}
+                        </div>
+                    )}
+
+                    <div className="p-4">
+                        {view === 'dashboard' && renderDashboard()}
+                        {view === 'entry' && <CompraForm />}
+                        {view === 'sale' && <VendaForm />}
+                        {view === 'death' && <MorteForm />}
+                        {view === 'history' && <HistoricoView />}
+                    </div>
+
+                    {/* Bottom Navigation */}
+                    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pb-safe flex justify-around items-center h-16 max-w-md mx-auto z-40">
+                        <button onClick={() => setView('dashboard')} className={`flex flex-col items-center p-2 ${view === 'dashboard' ? 'text-green-600' : 'text-gray-400'}`}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                            <span className="text-xs mt-1">Início</span>
+                        </button>
+                        <button onClick={() => setView('entry')} className={`flex flex-col items-center p-2 ${view === 'entry' ? 'text-green-600' : 'text-gray-400'}`}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
+                            <span className="text-xs mt-1">Compra</span>
+                        </button>
+                        <button onClick={() => setView('sale')} className={`flex flex-col items-center p-2 ${view === 'sale' ? 'text-green-600' : 'text-gray-400'}`}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                            <span className="text-xs mt-1">Venda</span>
+                        </button>
+                        <button onClick={() => setView('history')} className={`flex flex-col items-center p-2 ${view === 'history' ? 'text-green-600' : 'text-gray-400'}`}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                            <span className="text-xs mt-1">Histórico</span>
+                        </button>
+                    </nav>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
