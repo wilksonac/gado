@@ -30,6 +30,9 @@
         input, select, textarea { font-size: 16px !important; } /* Evita zoom no iOS */
         .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #16a34a; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Animação Modal */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 300ms, transform 300ms; }
     </style>
 </head>
 <body>
@@ -80,7 +83,8 @@
                 primary: "bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-200",
                 secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200",
                 danger: "bg-red-50 text-red-600 border border-red-100 hover:bg-red-100",
-                outline: "border-2 border-green-600 text-green-700 hover:bg-green-50"
+                outline: "border-2 border-green-600 text-green-700 hover:bg-green-50",
+                ghost: "bg-transparent text-gray-500 hover:bg-gray-100 p-2 w-auto"
             };
             return (
                 <button 
@@ -110,9 +114,157 @@
             </div>
         );
 
+        // --- Componente de Ajuda para Erro de Permissão ---
+        const PermissionHelpModal = ({ onClose }) => (
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[9999] p-4 animate-fade-in">
+                <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-2xl overflow-y-auto max-h-[90vh]">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xl font-bold text-red-600 flex items-center gap-2">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            Falta de Permissão no Banco de Dados
+                        </h3>
+                        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+                    </div>
+                    
+                    <p className="text-gray-600 mb-4 text-sm">
+                        O Firebase bloqueou o salvamento porque suas <strong>Regras de Segurança</strong> estão no modo bloqueado padrão (<code>allow read, write: if false;</code>).
+                    </p>
+                    
+                    <p className="font-bold text-gray-800 mb-2">Para corrigir (leva 1 minuto):</p>
+                    <ol className="list-decimal pl-5 space-y-2 text-sm text-gray-700 mb-4">
+                        <li>Acesse o <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 underline font-bold">Console do Firebase</a>.</li>
+                        <li>No menu lateral, clique em <strong>Criação (Build)</strong> &gt; <strong>Firestore Database</strong>.</li>
+                        <li>Clique na aba <strong>Regras (Rules)</strong>.</li>
+                        <li>Apague tudo o que estiver lá e <strong>cole exatamente o código abaixo</strong>:</li>
+                    </ol>
+
+                    <div className="bg-gray-800 text-gray-100 p-3 rounded text-xs font-mono overflow-x-auto mb-4 relative group border border-gray-600">
+<pre>{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Permite que cada usuário leia/grave APENAS seus próprios dados
+    match /artifacts/{appId}/users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}`}</pre>
+                    </div>
+
+                    <p className="text-sm text-gray-500 mb-4 italic">Após colar, clique em "Publicar" no console do Firebase e tente salvar aqui novamente.</p>
+
+                    <Button onClick={onClose}>Entendi, vou atualizar lá</Button>
+                </div>
+            </div>
+        );
+
         // --- Funções Auxiliares ---
         const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
         const formatNumber = (val) => new Intl.NumberFormat('pt-BR').format(val);
+
+        // --- Componente Modal de Dossiê ---
+        const DossierModal = ({ lote, historico, onClose }) => {
+            if (!lote) return null;
+
+            // Filtrar histórico relevante para este lote
+            const loteHistorico = historico.filter(item => {
+                // Se for COMPRA, o ID do detalhe é o próprio ID do lote
+                if (item.tipo === 'COMPRA' && item.detalhes.id === lote.id) return true;
+                // Se for VENDA ou MORTE, o ID do lote está dentro de loteSnapshot
+                if ((item.tipo === 'VENDA' || item.tipo === 'MORTE') && item.detalhes.loteSnapshot && item.detalhes.loteSnapshot.id === lote.id) return true;
+                return false;
+            }).sort((a, b) => new Date(b.data) - new Date(a.data)); // Mais recente primeiro
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        {/* Header */}
+                        <div className="bg-green-600 p-4 text-white flex justify-between items-center shrink-0">
+                            <div>
+                                <h2 className="text-lg font-bold">Dossiê do Lote</h2>
+                                <p className="text-green-100 text-xs">{lote.criador} - {lote.fazenda}</p>
+                            </div>
+                            <button onClick={onClose} className="bg-green-700 p-2 rounded-full hover:bg-green-800 transition">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+
+                        {/* Resumo do Lote */}
+                        <div className="bg-green-50 p-4 border-b border-green-100 shrink-0">
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                                <div className="bg-white p-2 rounded border border-green-200">
+                                    <span className="block text-xs text-gray-500">Inicial</span>
+                                    <span className="font-bold text-gray-800">{lote.qtdInicial} cb</span>
+                                </div>
+                                <div className="bg-white p-2 rounded border border-green-200">
+                                    <span className="block text-xs text-gray-500">Atual</span>
+                                    <span className="font-bold text-gray-800">{lote.qtdAtual} cb</span>
+                                </div>
+                                <div className="bg-white p-2 rounded border border-green-200">
+                                    <span className="block text-xs text-gray-500">Sexo</span>
+                                    <span className="font-bold text-gray-800">{lote.sexo || 'N/A'}</span>
+                                </div>
+                            </div>
+                            {lote.observacoes && (
+                                <div className="mt-3 text-xs text-gray-600 bg-white p-2 rounded border border-green-100 italic">
+                                    "Obs: {lote.observacoes}"
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Timeline */}
+                        <div className="overflow-y-auto p-4 space-y-4 flex-1">
+                            {loteHistorico.length === 0 ? (
+                                <p className="text-center text-gray-400 py-4">Nenhum registro encontrado.</p>
+                            ) : (
+                                loteHistorico.map(item => (
+                                    <div key={item.id} className="relative pl-6 border-l-2 border-gray-200 pb-2 last:border-0 last:pb-0">
+                                        {/* Bolinha da Timeline */}
+                                        <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white shadow-sm ${
+                                            item.tipo === 'COMPRA' ? 'bg-blue-500' :
+                                            item.tipo === 'VENDA' ? 'bg-green-500' : 'bg-red-500'
+                                        }`}></div>
+
+                                        <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${
+                                                    item.tipo === 'COMPRA' ? 'bg-blue-100 text-blue-700' :
+                                                    item.tipo === 'VENDA' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                }`}>{item.tipo}</span>
+                                                <span className="text-xs text-gray-400">{new Date(item.data).toLocaleDateString('pt-BR')}</span>
+                                            </div>
+                                            
+                                            {item.tipo === 'COMPRA' && (
+                                                <div className="text-sm text-gray-700">
+                                                    <p>Entrada de <strong>{item.detalhes.qtdInicial}</strong> cabeças.</p>
+                                                    <p className="text-xs text-gray-500 mt-1">Peso Total: {item.detalhes.pesoTotalInicial}kg</p>
+                                                </div>
+                                            )}
+
+                                            {item.tipo === 'MORTE' && (
+                                                <div className="text-sm text-gray-700">
+                                                    <p>Baixa de <strong>{item.detalhes.qtd}</strong> cabeça(s).</p>
+                                                    <p className="text-xs text-red-500 mt-1 italic">Motivo: {item.detalhes.obs}</p>
+                                                </div>
+                                            )}
+
+                                            {item.tipo === 'VENDA' && (
+                                                <div className="text-sm text-gray-700">
+                                                    <p>Venda de <strong>{item.detalhes.qtd}</strong> cabeça(s).</p>
+                                                    <div className="text-xs text-gray-500 mt-1 grid grid-cols-2 gap-2">
+                                                        <span>Méd. Saída: {formatNumber(item.detalhes.pesoMedioSaida?.toFixed(1))}kg</span>
+                                                        <span className="text-green-600 font-bold">Lucro: {formatCurrency(item.detalhes.lucroTotal)}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
         // --- Componente de Autenticação (Login/Registro) ---
         const AuthScreen = ({ onLoginSuccess, showToast }) => {
@@ -200,6 +352,18 @@
             const [historico, setHistorico] = useState([]);
             const [toast, setToast] = useState(null);
             const [loading, setLoading] = useState(true);
+            const [showPermissionError, setShowPermissionError] = useState(false);
+            const [selectedLoteDossier, setSelectedLoteDossier] = useState(null); // Estado para controlar qual Dossiê está aberto
+
+            // Handler centralizado de erros do Firebase
+            const handleFirebaseError = (err) => {
+                console.error("Firebase Error:", err);
+                if (err.code === 'permission-denied' || (err.message && err.message.includes('Missing or insufficient permissions'))) {
+                    setShowPermissionError(true);
+                } else {
+                    showToast("Erro: " + err.message, "error");
+                }
+            };
 
             // 1. Inicializar Autenticação
             useEffect(() => {
@@ -229,7 +393,7 @@
                     setLotes(loadedLotes);
                     setLoading(false);
                 }, (error) => {
-                    console.error("Erro ao carregar lotes:", error);
+                    handleFirebaseError(error);
                     setLoading(false);
                 });
 
@@ -239,7 +403,7 @@
                     // Ordenar localmente por data (mais recente primeiro)
                     loadedHist.sort((a, b) => new Date(b.data) - new Date(a.data));
                     setHistorico(loadedHist);
-                }, (error) => console.error(error));
+                }, (error) => handleFirebaseError(error));
 
                 return () => {
                     unsubscribeLotes();
@@ -297,8 +461,7 @@
                     setView('dashboard');
                     showToast('Lote salvo na nuvem!');
                 } catch (err) {
-                    console.error(err);
-                    showToast('Erro ao salvar compra.', 'error');
+                    handleFirebaseError(err);
                 }
             };
 
@@ -331,8 +494,7 @@
                     setView('dashboard');
                     showToast('Morte registrada.');
                 } catch (err) {
-                    console.error(err);
-                    showToast('Erro ao registrar morte.', 'error');
+                    handleFirebaseError(err);
                 }
             };
 
@@ -393,7 +555,7 @@
                     await histRef.add({
                         tipo: 'VENDA',
                         data: data.data,
-                        descricao: `Venda ${qtdVendida} cb - Lote ${lote.criador}`,
+                        descricao: `Venda ${qtdVendida} cb - ${lote.criador}`,
                         detalhes: resumoVenda,
                         valor: parteMinha,
                         createdAt: new Date().toISOString()
@@ -402,8 +564,7 @@
                     setView('dashboard');
                     showToast('Venda realizada com sucesso!');
                 } catch (err) {
-                    console.error(err);
-                    showToast('Erro ao registrar venda.', 'error');
+                    handleFirebaseError(err);
                 }
             };
 
@@ -468,9 +629,9 @@
                                 <p className="text-gray-400 text-center py-4 bg-gray-100 rounded-lg border border-dashed border-gray-300">Nenhum lote ativo no banco de dados.</p>
                             ) : (
                                 lotes.filter(l => l.ativo).map(lote => (
-                                    <Card key={lote.id} className="mb-3 border-l-4 border-l-green-500">
+                                    <Card key={lote.id} className="mb-3 border-l-4 border-l-green-500 relative">
                                         <div className="flex justify-between items-start">
-                                            <div>
+                                            <div className="pr-10"> {/* Padding right para não sobrepor o botão */}
                                                 <h3 className="font-bold text-gray-800 flex items-center gap-2">
                                                     {lote.criador}
                                                     {lote.sexo && (
@@ -483,10 +644,18 @@
                                             </div>
                                             <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold">{lote.qtdAtual} cb</span>
                                         </div>
-                                        <div className="mt-2 text-sm text-gray-600 flex justify-between">
+                                        <div className="mt-2 text-sm text-gray-600 flex justify-between items-center">
                                             <span>Entrada: {new Date(lote.dataEntrada + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                                            <span>Média Compra: {formatCurrency(lote.custoMedioCabeca)}</span>
                                         </div>
+
+                                        {/* Botão de Dossiê */}
+                                        <button 
+                                            onClick={() => setSelectedLoteDossier(lote)}
+                                            className="absolute right-4 bottom-4 p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-green-100 hover:text-green-700 transition shadow-sm border border-gray-200"
+                                            title="Ver Histórico/Dossiê"
+                                        >
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        </button>
                                     </Card>
                                 ))
                             )}
@@ -871,6 +1040,20 @@
                         <div className={`fixed top-4 left-4 right-4 z-50 p-4 rounded shadow-lg text-white text-center transform transition-all duration-300 ${toast.type === 'error' ? 'bg-red-500' : 'bg-gray-800'}`}>
                             {toast.msg}
                         </div>
+                    )}
+
+                    {/* Modal de Ajuda de Permissão */}
+                    {showPermissionError && (
+                        <PermissionHelpModal onClose={() => setShowPermissionError(false)} />
+                    )}
+
+                    {/* Modal de Dossiê */}
+                    {selectedLoteDossier && (
+                        <DossierModal 
+                            lote={selectedLoteDossier} 
+                            historico={historico} 
+                            onClose={() => setSelectedLoteDossier(null)} 
+                        />
                     )}
 
                     {!user ? (
