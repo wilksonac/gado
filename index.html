@@ -272,6 +272,7 @@
                         dataEntrada: data.data,
                         criador: data.criador,
                         fazenda: data.fazenda,
+                        sexo: data.sexo, // Novo campo
                         qtdInicial: Number(data.qtd),
                         qtdAtual: Number(data.qtd),
                         pesoTotalInicial: Number(data.pesoTotal), // em KG
@@ -287,7 +288,7 @@
                     await histRef.add({
                         tipo: 'COMPRA',
                         data: data.data,
-                        descricao: `Compra de ${data.qtd} cb - ${data.criador}`,
+                        descricao: `Compra de ${data.qtd} cb (${data.sexo}) - ${data.criador}`,
                         detalhes: { ...novoLote, id: docRef.id },
                         valor: -Number(data.valorTotal),
                         createdAt: new Date().toISOString()
@@ -470,7 +471,14 @@
                                     <Card key={lote.id} className="mb-3 border-l-4 border-l-green-500">
                                         <div className="flex justify-between items-start">
                                             <div>
-                                                <h3 className="font-bold text-gray-800">{lote.criador}</h3>
+                                                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                                    {lote.criador}
+                                                    {lote.sexo && (
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${lote.sexo === 'Fêmea' ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                                                            {lote.sexo}
+                                                        </span>
+                                                    )}
+                                                </h3>
                                                 <p className="text-sm text-gray-500">{lote.fazenda}</p>
                                             </div>
                                             <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold">{lote.qtdAtual} cb</span>
@@ -493,6 +501,7 @@
                     data: new Date().toISOString().split('T')[0],
                     criador: '',
                     fazenda: '',
+                    sexo: 'Macho', // Padrão
                     qtd: '',
                     pesoTotal: '', // KG
                     valorTotal: '',
@@ -529,6 +538,30 @@
 
                             <div className="bg-white p-4 rounded-lg shadow-sm">
                                 <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wider">Dados dos Animais</h3>
+                                
+                                {/* Seletor de Sexo */}
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Sexo dos Animais</label>
+                                    <div className="flex gap-3">
+                                        {['Macho', 'Fêmea'].map(option => (
+                                            <button
+                                                key={option}
+                                                type="button"
+                                                onClick={() => setForm({...form, sexo: option})}
+                                                className={`flex-1 py-3 rounded-lg border font-medium transition-all ${
+                                                    form.sexo === option 
+                                                    ? option === 'Fêmea' 
+                                                        ? 'bg-pink-50 border-pink-500 text-pink-700 ring-1 ring-pink-500' 
+                                                        : 'bg-blue-50 border-blue-500 text-blue-700 ring-1 ring-blue-500'
+                                                    : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                {option}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
                                 <div className="grid grid-cols-2 gap-3">
                                     <InputGroup label="Qtd. Cabeças" type="tel" value={form.qtd} onChange={e => setForm({...form, qtd: e.target.value})} placeholder="0" required />
                                     <InputGroup label="Peso Total (KG)" type="tel" value={form.pesoTotal} onChange={e => setForm({...form, pesoTotal: e.target.value})} placeholder="0.00" required />
