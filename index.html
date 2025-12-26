@@ -1,9 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Gestor Pecuária à Meia (Online)</title>
@@ -164,6 +161,47 @@ service cloud.firestore {
         const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
         const formatNumber = (val) => new Intl.NumberFormat('pt-BR').format(val);
 
+        // --- Componente Modal para Adicionar Observação ---
+        const AddObservationModal = ({ lote, onClose, onSave, isLoading }) => {
+            const [data, setData] = useState(new Date().toISOString().split('T')[0]);
+            const [obs, setObs] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(lote, { data, texto: obs });
+            };
+
+            if (!lote) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl p-6">
+                        <h2 className="text-lg font-bold text-gray-800 mb-2">Adicionar Observação</h2>
+                        <p className="text-sm text-gray-500 mb-4">{lote.criador} - {lote.fazenda}</p>
+                        
+                        <form onSubmit={handleSubmit}>
+                            <InputGroup label="Data" type="date" value={data} onChange={e => setData(e.target.value)} required />
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Observação</label>
+                                <textarea
+                                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 outline-none transition-colors bg-gray-50 focus:bg-white h-32 resize-none"
+                                    placeholder="Ex: Vacinação de aftosa realizada, trocou de pasto, etc."
+                                    value={obs}
+                                    onChange={e => setObs(e.target.value)}
+                                    required
+                                ></textarea>
+                            </div>
+                            
+                            <div className="flex gap-3 mt-4">
+                                <Button onClick={onClose} variant="secondary">Cancelar</Button>
+                                <Button type="submit" isLoading={isLoading}>Salvar</Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
         // --- Componente Modal de Dossiê ---
         const DossierModal = ({ lote, historico, onClose }) => {
             if (!lote) return null;
@@ -172,8 +210,8 @@ service cloud.firestore {
             const loteHistorico = historico.filter(item => {
                 // Se for COMPRA, o ID do detalhe é o próprio ID do lote
                 if (item.tipo === 'COMPRA' && item.detalhes.id === lote.id) return true;
-                // Se for VENDA ou MORTE, o ID do lote está dentro de loteSnapshot
-                if ((item.tipo === 'VENDA' || item.tipo === 'MORTE') && item.detalhes.loteSnapshot && item.detalhes.loteSnapshot.id === lote.id) return true;
+                // Se for VENDA, MORTE ou OBSERVACAO, o ID do lote está dentro de loteSnapshot
+                if (['VENDA', 'MORTE', 'OBSERVACAO'].includes(item.tipo) && item.detalhes.loteSnapshot && item.detalhes.loteSnapshot.id === lote.id) return true;
                 return false;
             }).sort((a, b) => new Date(b.data) - new Date(a.data)); // Mais recente primeiro
 
@@ -224,14 +262,16 @@ service cloud.firestore {
                                         {/* Bolinha da Timeline */}
                                         <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white shadow-sm ${
                                             item.tipo === 'COMPRA' ? 'bg-blue-500' :
-                                            item.tipo === 'VENDA' ? 'bg-green-500' : 'bg-red-500'
+                                            item.tipo === 'VENDA' ? 'bg-green-500' : 
+                                            item.tipo === 'OBSERVACAO' ? 'bg-yellow-500' : 'bg-red-500'
                                         }`}></div>
 
                                         <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
                                             <div className="flex justify-between items-start mb-1">
                                                 <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${
                                                     item.tipo === 'COMPRA' ? 'bg-blue-100 text-blue-700' :
-                                                    item.tipo === 'VENDA' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                    item.tipo === 'VENDA' ? 'bg-green-100 text-green-700' : 
+                                                    item.tipo === 'OBSERVACAO' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
                                                 }`}>{item.tipo}</span>
                                                 <span className="text-xs text-gray-400">{new Date(item.data).toLocaleDateString('pt-BR')}</span>
                                             </div>
@@ -247,6 +287,12 @@ service cloud.firestore {
                                                 <div className="text-sm text-gray-700">
                                                     <p>Baixa de <strong>{item.detalhes.qtd}</strong> cabeça(s).</p>
                                                     <p className="text-xs text-red-500 mt-1 italic">Motivo: {item.detalhes.obs}</p>
+                                                </div>
+                                            )}
+
+                                            {item.tipo === 'OBSERVACAO' && (
+                                                <div className="text-sm text-gray-700">
+                                                    <p className="italic">"{item.detalhes.obs}"</p>
                                                 </div>
                                             )}
 
@@ -356,7 +402,8 @@ service cloud.firestore {
             const [toast, setToast] = useState(null);
             const [loading, setLoading] = useState(true);
             const [showPermissionError, setShowPermissionError] = useState(false);
-            const [selectedLoteDossier, setSelectedLoteDossier] = useState(null); // Estado para controlar qual Dossiê está aberto
+            const [selectedLoteDossier, setSelectedLoteDossier] = useState(null); // Dossiê
+            const [selectedLoteObs, setSelectedLoteObs] = useState(null); // Nova Observação
 
             // Handler centralizado de erros do Firebase
             const handleFirebaseError = (err) => {
@@ -571,6 +618,30 @@ service cloud.firestore {
                 }
             };
 
+            const handleObservacao = async (lote, obsData) => {
+                if (!user) return;
+                setLoading(true);
+                try {
+                    const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
+                    
+                    await histRef.add({
+                        tipo: 'OBSERVACAO',
+                        data: obsData.data,
+                        descricao: `Observação - ${lote.criador}`,
+                        detalhes: { obs: obsData.texto, loteSnapshot: lote },
+                        valor: 0,
+                        createdAt: new Date().toISOString()
+                    });
+
+                    setSelectedLoteObs(null); // Fecha o modal
+                    showToast('Observação adicionada!');
+                } catch (err) {
+                    handleFirebaseError(err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
             // --- Renderização de Telas ---
 
             const renderDashboard = () => {
@@ -651,383 +722,24 @@ service cloud.firestore {
                                             <span>Entrada: {new Date(lote.dataEntrada + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
                                         </div>
 
-                                        {/* Botão de Dossiê */}
-                                        <button 
-                                            onClick={() => setSelectedLoteDossier(lote)}
-                                            className="absolute right-4 bottom-4 p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-green-100 hover:text-green-700 transition shadow-sm border border-gray-200"
-                                            title="Ver Histórico/Dossiê"
-                                        >
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                                        </button>
-                                    </Card>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                );
-            };
-
-            // Form de Compra
-            const CompraForm = () => {
-                const [form, setForm] = useState({
-                    data: new Date().toISOString().split('T')[0],
-                    criador: '',
-                    fazenda: '',
-                    sexo: 'Macho', // Padrão
-                    qtd: '',
-                    pesoTotal: '', // KG
-                    valorTotal: '',
-                    obs: ''
-                });
-                const [saving, setSaving] = useState(false);
-
-                const handleSubmit = async (e) => {
-                    e.preventDefault();
-                    setSaving(true);
-                    await handleCompra(form);
-                    setSaving(false);
-                };
-
-                const pesoMedio = form.qtd && form.pesoTotal ? (form.pesoTotal / form.qtd).toFixed(1) : 0;
-                const valorMedio = form.qtd && form.valorTotal ? (form.valorTotal / form.qtd).toFixed(2) : 0;
-
-                return (
-                    <div className="animate-fade-in pb-20">
-                         <header className="flex items-center mb-6">
-                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                            </button>
-                            <h1 className="text-xl font-bold text-gray-800">Nova Compra (Lote)</h1>
-                        </header>
-                        
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="bg-white p-4 rounded-lg shadow-sm">
-                                <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wider">Dados do Parceiro</h3>
-                                <InputGroup label="Data da Compra" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
-                                <InputGroup label="Nome do Criador/Parceiro" value={form.criador} onChange={e => setForm({...form, criador: e.target.value})} placeholder="Ex: João da Silva" required />
-                                <InputGroup label="Fazenda de Destino" value={form.fazenda} onChange={e => setForm({...form, fazenda: e.target.value})} placeholder="Ex: Fazenda Santa Rita" required />
-                            </div>
-
-                            <div className="bg-white p-4 rounded-lg shadow-sm">
-                                <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wider">Dados dos Animais</h3>
-                                
-                                {/* Seletor de Sexo */}
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Sexo dos Animais</label>
-                                    <div className="flex gap-3">
-                                        {['Macho', 'Fêmea'].map(option => (
-                                            <button
-                                                key={option}
-                                                type="button"
-                                                onClick={() => setForm({...form, sexo: option})}
-                                                className={`flex-1 py-3 rounded-lg border font-medium transition-all ${
-                                                    form.sexo === option 
-                                                    ? option === 'Fêmea' 
-                                                        ? 'bg-pink-50 border-pink-500 text-pink-700 ring-1 ring-pink-500' 
-                                                        : 'bg-blue-50 border-blue-500 text-blue-700 ring-1 ring-blue-500'
-                                                    : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
-                                                }`}
+                                        {/* Ações do Card */}
+                                        <div className="absolute right-4 bottom-4 flex gap-2">
+                                            <button 
+                                                onClick={() => setSelectedLoteObs(lote)}
+                                                className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-yellow-100 hover:text-yellow-700 transition shadow-sm border border-gray-200"
+                                                title="Adicionar Nota/Observação"
                                             >
-                                                {option}
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                             </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <InputGroup label="Qtd. Cabeças" type="tel" value={form.qtd} onChange={e => setForm({...form, qtd: e.target.value})} placeholder="0" required />
-                                    <InputGroup label="Peso Total (KG)" type="tel" value={form.pesoTotal} onChange={e => setForm({...form, pesoTotal: e.target.value})} placeholder="0.00" required />
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded mb-4 text-sm text-gray-600">
-                                    Média estimada: <strong>{pesoMedio} kg</strong> / {(pesoMedio / 30).toFixed(1)} @
-                                </div>
-                                
-                                <InputGroup label="Valor Total da Compra (R$)" type="number" step="0.01" value={form.valorTotal} onChange={e => setForm({...form, valorTotal: e.target.value})} placeholder="0,00" required />
-                                <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
-                                    Preço médio: <strong>{formatCurrency(valorMedio)}</strong> por cabeça
-                                </div>
-                            </div>
-
-                            <InputGroup label="Observações" type="text" value={form.obs} onChange={e => setForm({...form, obs: e.target.value})} placeholder="Ex: Gado nelore, magro..." />
-
-                            <Button type="submit" className="mt-6" isLoading={saving}>Salvar Compra na Nuvem</Button>
-                        </form>
-                    </div>
-                );
-            };
-
-            // Form de Venda
-            const VendaForm = () => {
-                const lotesAtivos = lotes.filter(l => l.ativo);
-                const [form, setForm] = useState({
-                    loteId: '',
-                    data: new Date().toISOString().split('T')[0],
-                    qtd: '',
-                    pesoTotalVenda: '',
-                    valorTotalVenda: '',
-                    frete: '0',
-                    balanca: '0',
-                    outrosCustos: '0'
-                });
-                const [saving, setSaving] = useState(false);
-
-                const loteSelecionado = lotes.find(l => l.id === form.loteId);
-
-                // --- Lógica de Pesos e Médias ---
-                const qtdVendida = Number(form.qtd) || 0;
-                const pesoTotalVenda = Number(form.pesoTotalVenda) || 0;
-                
-                const pesoMedioEntrada = loteSelecionado ? (loteSelecionado.pesoTotalInicial / loteSelecionado.qtdInicial) : 0;
-                const pesoMedioSaida = qtdVendida > 0 ? (pesoTotalVenda / qtdVendida) : 0;
-                const ganhoPesoPorCabeca = pesoMedioSaida - pesoMedioEntrada;
-                const ganhoPesoTotal = ganhoPesoPorCabeca * qtdVendida;
-
-                // --- Lógica Financeira ---
-                const custoBase = loteSelecionado ? loteSelecionado.custoMedioCabeca * qtdVendida : 0;
-                
-                const receitaLiquida = (Number(form.valorTotalVenda) || 0) - (Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos));
-                const lucro = receitaLiquida - custoBase;
-                
-                const parteCriador = lucro > 0 ? lucro * 0.60 : 0;
-                const parteMinha = lucro > 0 ? custoBase + (lucro * 0.40) : receitaLiquida;
-
-                const handleSubmit = async (e) => {
-                    e.preventDefault();
-                    setSaving(true);
-                    await handleVenda(form);
-                    setSaving(false);
-                };
-
-                if (loading) return <div className="flex justify-center p-10"><div className="spinner"></div></div>;
-
-                if (lotesAtivos.length === 0) return (
-                    <div className="text-center mt-10 p-4">
-                        <p className="text-gray-500 mb-4">Não há lotes com animais disponíveis para venda.</p>
-                        <Button onClick={() => setView('dashboard')}>Voltar</Button>
-                    </div>
-                );
-
-                return (
-                    <div className="animate-fade-in pb-20">
-                        <header className="flex items-center mb-6">
-                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                            </button>
-                            <h1 className="text-xl font-bold text-gray-800">Registrar Venda</h1>
-                        </header>
-
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            
-                            {/* Passo 1: Seleção de Lote */}
-                            <div className="bg-white p-4 rounded-lg shadow-sm">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Selecione o Lote</label>
-                                <select 
-                                    className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg mb-4"
-                                    value={form.loteId}
-                                    onChange={e => setForm({...form, loteId: e.target.value, qtd: ''})}
-                                    required
-                                >
-                                    <option value="">Selecione...</option>
-                                    {lotesAtivos.map(l => (
-                                        <option key={l.id} value={l.id}>{l.criador} ({l.qtdAtual} cabeças) - {l.fazenda}</option>
-                                    ))}
-                                </select>
-                                
-                                <InputGroup label="Data da Venda" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
-                            </div>
-
-                            {form.loteId && (
-                                <>
-                                    <div className="bg-white p-4 rounded-lg shadow-sm">
-                                        <h3 className="text-sm font-semibold text-green-700 mb-4 uppercase">Dados da Negociação</h3>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <InputGroup 
-                                                label="Qtd. Vendida" 
-                                                type="tel" 
-                                                value={form.qtd} 
-                                                onChange={e => {
-                                                    const val = Math.min(Number(e.target.value), loteSelecionado.qtdAtual);
-                                                    setForm({...form, qtd: val});
-                                                }} 
-                                                placeholder={`Máx: ${loteSelecionado.qtdAtual}`}
-                                                required 
-                                            />
-                                            <InputGroup label="Peso Total Venda (KG)" type="tel" value={form.pesoTotalVenda} onChange={e => setForm({...form, pesoTotalVenda: e.target.value})} placeholder="Peso Balança" required />
+                                            <button 
+                                                onClick={() => setSelectedLoteDossier(lote)}
+                                                className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-green-100 hover:text-green-700 transition shadow-sm border border-gray-200"
+                                                title="Ver Histórico/Dossiê"
+                                            >
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                            </button>
                                         </div>
-
-                                        {/* Exibição das Médias de Peso */}
-                                        {qtdVendida > 0 && pesoTotalVenda > 0 && (
-                                            <div className="mb-4 bg-blue-50 p-3 rounded text-sm text-blue-800 border border-blue-100">
-                                                <div className="flex justify-between mb-1">
-                                                    <span>Média Entrada:</span>
-                                                    <strong>{formatNumber(pesoMedioEntrada.toFixed(1))} kg</strong>
-                                                </div>
-                                                <div className="flex justify-between mb-1">
-                                                    <span>Média Saída:</span>
-                                                    <strong>{formatNumber(pesoMedioSaida.toFixed(1))} kg</strong>
-                                                </div>
-                                                <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 font-bold">
-                                                    <span>Ganho Peso Total:</span>
-                                                    <span>+{formatNumber(ganhoPesoTotal.toFixed(1))} kg</span>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <InputGroup label="Valor TOTAL da Venda (R$)" type="number" step="0.01" value={form.valorTotalVenda} onChange={e => setForm({...form, valorTotalVenda: e.target.value})} placeholder="Valor Bruto" required />
-                                    </div>
-
-                                    <div className="bg-white p-4 rounded-lg shadow-sm border border-orange-100">
-                                        <h3 className="text-sm font-semibold text-orange-700 mb-4 uppercase">Custos / Descontos</h3>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <InputGroup label="Frete" type="tel" value={form.frete} onChange={e => setForm({...form, frete: e.target.value})} />
-                                            <InputGroup label="Balança" type="tel" value={form.balanca} onChange={e => setForm({...form, balanca: e.target.value})} />
-                                            <InputGroup label="Outros" type="tel" value={form.outrosCustos} onChange={e => setForm({...form, outrosCustos: e.target.value})} />
-                                        </div>
-                                    </div>
-
-                                    {/* Card de Resumo Financeiro (Preview) */}
-                                    <div className="bg-gray-800 text-white p-4 rounded-lg shadow-lg mt-4">
-                                        <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase border-b border-gray-600 pb-2">Simulação de Acerto</h3>
-                                        
-                                        <div className="flex justify-between text-sm mb-1">
-                                            <span>Valor Bruto:</span>
-                                            <span>{formatCurrency(form.valorTotalVenda || 0)}</span>
-                                        </div>
-                                        <div className="flex justify-between text-sm mb-1 text-red-300">
-                                            <span>(-) Custos Totais:</span>
-                                            <span>{formatCurrency((Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos)))}</span>
-                                        </div>
-                                        <div className="flex justify-between text-sm mb-3 text-red-300">
-                                            <span>(-) Custo Original (Base {qtdVendida}cb):</span>
-                                            <span>{formatCurrency(custoBase)}</span>
-                                        </div>
-                                        
-                                        <div className="border-t border-gray-600 my-2 pt-2 flex justify-between font-bold text-green-400">
-                                            <span>Lucro Financeiro:</span>
-                                            <span>{formatCurrency(lucro)}</span>
-                                        </div>
-
-                                        <div className="mt-4 bg-gray-700 p-3 rounded-lg">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-sm text-gray-300">Parceiro (60% Lucro):</span>
-                                                <span className="font-bold text-lg">{formatCurrency(parteCriador)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center border-t border-gray-600 pt-2">
-                                                <span className="text-sm text-gray-300">Minha Parte (Custo + 40%):</span>
-                                                <span className="font-bold text-xl text-green-400">{formatCurrency(parteMinha)}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <Button type="submit" variant="primary" className="mt-4 mb-8" isLoading={saving}>Confirmar Venda e Baixar Estoque</Button>
-                                </>
-                            )}
-                        </form>
-                    </div>
-                );
-            };
-
-            // Form de Morte
-            const MorteForm = () => {
-                const lotesAtivos = lotes.filter(l => l.ativo);
-                const [form, setForm] = useState({ loteId: '', data: new Date().toISOString().split('T')[0], qtd: '1', obs: '' });
-                const [saving, setSaving] = useState(false);
-
-                const handleSubmit = async (e) => {
-                    e.preventDefault();
-                    setSaving(true);
-                    await handleMorte(form);
-                    setSaving(false);
-                };
-
-                if (loading) return <div className="flex justify-center p-10"><div className="spinner"></div></div>;
-
-                if (lotesAtivos.length === 0) return <div className="p-4 text-center text-gray-500">Sem gado no estoque. <Button onClick={()=>setView('dashboard')} className="mt-4">Voltar</Button></div>;
-
-                return (
-                    <div className="animate-fade-in pb-20">
-                         <header className="flex items-center mb-6">
-                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                            </button>
-                            <h1 className="text-xl font-bold text-red-600">Registrar Morte</h1>
-                        </header>
-                        <form onSubmit={handleSubmit} className="bg-white p-4 rounded-lg shadow-sm space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Lote</label>
-                                <select className="w-full p-3 bg-gray-50 border rounded-lg" value={form.loteId} onChange={e => setForm({...form, loteId: e.target.value})} required>
-                                    <option value="">Selecione...</option>
-                                    {lotesAtivos.map(l => <option key={l.id} value={l.id}>{l.criador} - Estoque: {l.qtdAtual}</option>)}
-                                </select>
-                            </div>
-                            <InputGroup label="Data" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
-                            <InputGroup label="Quantidade Morta" type="tel" value={form.qtd} onChange={e => setForm({...form, qtd: e.target.value})} required />
-                            <InputGroup label="Causa / Observação" value={form.obs} onChange={e => setForm({...form, obs: e.target.value})} placeholder="Picada de cobra, doença, etc." required />
-                            <Button type="submit" variant="danger" isLoading={saving}>Confirmar Baixa</Button>
-                        </form>
-                    </div>
-                );
-            };
-
-            // Tela de Histórico
-            const HistoricoView = () => {
-                if (loading) return <div className="flex justify-center p-10"><div className="spinner"></div></div>;
-
-                return (
-                    <div className="animate-fade-in pb-20">
-                        <header className="flex items-center mb-6">
-                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                            </button>
-                            <h1 className="text-xl font-bold text-gray-800">Histórico e Finanças</h1>
-                        </header>
-
-                        <div className="space-y-4">
-                            {historico.length === 0 ? (
-                                <p className="text-center text-gray-500 py-8">Nenhuma movimentação registrada.</p>
-                            ) : (
-                                historico.map(item => (
-                                    <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-l-gray-300 relative overflow-hidden">
-                                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
-                                            item.tipo === 'VENDA' ? 'bg-green-500' : 
-                                            item.tipo === 'COMPRA' ? 'bg-blue-500' : 'bg-red-500'
-                                        }`}></div>
-                                        
-                                        <div className="flex justify-between items-start mb-2">
-                                            <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${
-                                                item.tipo === 'VENDA' ? 'bg-green-100 text-green-800' : 
-                                                item.tipo === 'COMPRA' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
-                                            }`}>{item.tipo}</span>
-                                            <span className="text-xs text-gray-500">{new Date(item.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                                        </div>
-                                        
-                                        <h3 className="font-semibold text-gray-800">{item.descricao}</h3>
-                                        
-                                        {item.tipo === 'VENDA' && (
-                                            <div className="mt-2 text-sm bg-gray-50 p-2 rounded">
-                                                {item.detalhes.pesoMedioSaida && (
-                                                     <div className="flex justify-between text-xs text-gray-500 mb-2 border-b border-gray-200 pb-1">
-                                                        <span>Ganho Peso:</span> 
-                                                        <span>{formatNumber((item.detalhes.ganhoPesoTotal).toFixed(1))} kg ({(item.detalhes.pesoMedioSaida - item.detalhes.pesoMedioEntrada).toFixed(1)}/cb)</span>
-                                                    </div>
-                                                )}
-                                                <div className="flex justify-between"><span>Bruto:</span> <span>{formatCurrency(item.detalhes.valorTotalVenda)}</span></div>
-                                                <div className="flex justify-between text-red-500"><span>Custos:</span> <span>-{formatCurrency(item.detalhes.custosOperacionais)}</span></div>
-                                                <div className="flex justify-between font-bold border-t border-gray-200 mt-1 pt-1">
-                                                    <span>Parte Criador:</span> <span className="text-gray-600">{formatCurrency(item.detalhes.pagamentoCriador)}</span>
-                                                </div>
-                                                <div className="flex justify-between font-bold text-green-700">
-                                                    <span>Minha Parte:</span> <span>{formatCurrency(item.detalhes.meuRetorno)}</span>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {item.tipo === 'COMPRA' && (
-                                            <div className="mt-2 text-sm text-gray-600">
-                                                Investimento: <strong>{formatCurrency(Math.abs(item.valor))}</strong>
-                                            </div>
-                                        )}
-                                    </div>
+                                    </Card>
                                 ))
                             )}
                         </div>
@@ -1048,6 +760,16 @@ service cloud.firestore {
                     {/* Modal de Ajuda de Permissão */}
                     {showPermissionError && (
                         <PermissionHelpModal onClose={() => setShowPermissionError(false)} />
+                    )}
+
+                    {/* Modal de Nova Observação */}
+                    {selectedLoteObs && (
+                        <AddObservationModal 
+                            lote={selectedLoteObs} 
+                            onClose={() => setSelectedLoteObs(null)}
+                            onSave={handleObservacao}
+                            isLoading={loading}
+                        />
                     )}
 
                     {/* Modal de Dossiê */}
