@@ -203,7 +203,7 @@ service cloud.firestore {
         };
 
         // --- Componente Modal de Dossiê ---
-        const DossierModal = ({ lote, historico, onClose }) => {
+        const DossierModal = ({ lote, historico, onClose, onDelete }) => {
             if (!lote) return null;
 
             // Filtrar histórico relevante para este lote
@@ -266,7 +266,7 @@ service cloud.firestore {
                                             item.tipo === 'OBSERVACAO' ? 'bg-yellow-500' : 'bg-red-500'
                                         }`}></div>
 
-                                        <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
+                                        <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm relative group">
                                             <div className="flex justify-between items-start mb-1">
                                                 <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${
                                                     item.tipo === 'COMPRA' ? 'bg-blue-100 text-blue-700' :
@@ -275,6 +275,17 @@ service cloud.firestore {
                                                 }`}>{item.tipo}</span>
                                                 <span className="text-xs text-gray-400">{new Date(item.data).toLocaleDateString('pt-BR')}</span>
                                             </div>
+                                            
+                                            {/* Botão de Excluir (Apenas para Observações) */}
+                                            {item.tipo === 'OBSERVACAO' && (
+                                                <button 
+                                                    onClick={() => onDelete(item.id)}
+                                                    className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-100 transition-all"
+                                                    title="Excluir Observação"
+                                                >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                                </button>
+                                            )}
                                             
                                             {item.tipo === 'COMPRA' && (
                                                 <div className="text-sm text-gray-700">
@@ -291,7 +302,7 @@ service cloud.firestore {
                                             )}
 
                                             {item.tipo === 'OBSERVACAO' && (
-                                                <div className="text-sm text-gray-700">
+                                                <div className="text-sm text-gray-700 pr-6">
                                                     <p className="italic">"{item.detalhes.obs}"</p>
                                                 </div>
                                             )}
@@ -642,6 +653,22 @@ service cloud.firestore {
                 }
             };
 
+            const handleDeleteHistorico = async (itemId) => {
+                if (!user) return;
+                if (!window.confirm("Tem certeza que deseja excluir esta observação?")) return;
+                
+                setLoading(true);
+                try {
+                    const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico').doc(itemId);
+                    await histRef.delete();
+                    showToast('Observação excluída!');
+                } catch (err) {
+                    handleFirebaseError(err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
             // --- Renderização de Telas ---
 
             const renderDashboard = () => {
@@ -777,7 +804,8 @@ service cloud.firestore {
                         <DossierModal 
                             lote={selectedLoteDossier} 
                             historico={historico} 
-                            onClose={() => setSelectedLoteDossier(null)} 
+                            onClose={() => setSelectedLoteDossier(null)}
+                            onDelete={handleDeleteHistorico}
                         />
                     )}
 
