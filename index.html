@@ -114,54 +114,104 @@
             </div>
         );
 
-        // --- Componente de Ajuda para Erro de Permissão ---
-        const PermissionHelpModal = ({ onClose }) => (
-            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[9999] p-4 animate-fade-in">
-                <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-2xl overflow-y-auto max-h-[90vh]">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-bold text-red-600 flex items-center gap-2">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                            Falta de Permissão no Banco de Dados
-                        </h3>
-                        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
-                    </div>
-                    
-                    <p className="text-gray-600 mb-4 text-sm">
-                        O Firebase bloqueou o salvamento porque suas <strong>Regras de Segurança</strong> estão no modo bloqueado padrão (<code>allow read, write: if false;</code>).
-                    </p>
-                    
-                    <p className="font-bold text-gray-800 mb-2">Para corrigir (leva 1 minuto):</p>
-                    <ol className="list-decimal pl-5 space-y-2 text-sm text-gray-700 mb-4">
-                        <li>Acesse o <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 underline font-bold">Console do Firebase</a>.</li>
-                        <li>No menu lateral, clique em <strong>Criação (Build)</strong> &gt; <strong>Firestore Database</strong>.</li>
-                        <li>Clique na aba <strong>Regras (Rules)</strong>.</li>
-                        <li>Apague tudo o que estiver lá e <strong>cole exatamente o código abaixo</strong>:</li>
-                    </ol>
-
-                    <div className="bg-gray-800 text-gray-100 p-3 rounded text-xs font-mono overflow-x-auto mb-4 relative group border border-gray-600">
-<pre>{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Permite que cada usuário leia/grave APENAS seus próprios dados
-    match /artifacts/{appId}/users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}`}</pre>
-                    </div>
-
-                    <p className="text-sm text-gray-500 mb-4 italic">Após colar, clique em "Publicar" no console do Firebase e tente salvar aqui novamente.</p>
-
-                    <Button onClick={onClose}>Entendi, vou atualizar lá</Button>
-                </div>
-            </div>
-        );
-
         // --- Funções Auxiliares ---
-        const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-        const formatNumber = (val) => new Intl.NumberFormat('pt-BR').format(val);
+        // Proteção contra valores nulos/undefined na formatação
+        const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(val) || 0);
+        const formatNumber = (val) => new Intl.NumberFormat('pt-BR').format(Number(val) || 0);
 
-        // --- Componente Modal para Adicionar Observação ---
+        // --- COMPONENTES EXTERNOS (Evita recriação e erros de tela branca) ---
+
+        // 1. Formulário de Compra (Extraído do App)
+        const CompraForm = ({ onBack, onSubmit, isLoading }) => {
+            const [form, setForm] = useState({
+                data: new Date().toISOString().split('T')[0],
+                criador: '',
+                fazenda: '',
+                sexo: 'Macho',
+                qtd: '',
+                pesoTotal: '', 
+                valorTotal: '',
+                obs: ''
+            });
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit(form);
+            };
+
+            // Cálculos seguros: convertendo para Number antes de operar
+            const qtd = Number(form.qtd) || 0;
+            const pesoTotal = Number(form.pesoTotal) || 0;
+            const valorTotal = Number(form.valorTotal) || 0;
+
+            const pesoMedio = qtd > 0 ? (pesoTotal / qtd).toFixed(1) : 0;
+            const valorMedio = qtd > 0 ? (valorTotal / qtd) : 0;
+
+            return (
+                <div className="animate-fade-in pb-20">
+                     <header className="flex items-center mb-6">
+                        <button onClick={onBack} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                        </button>
+                        <h1 className="text-xl font-bold text-gray-800">Nova Compra (Lote)</h1>
+                    </header>
+                    
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="bg-white p-4 rounded-lg shadow-sm">
+                            <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wider">Dados do Parceiro</h3>
+                            <InputGroup label="Data da Compra" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
+                            <InputGroup label="Nome do Criador/Parceiro" value={form.criador} onChange={e => setForm({...form, criador: e.target.value})} placeholder="Ex: João da Silva" required />
+                            <InputGroup label="Fazenda de Destino" value={form.fazenda} onChange={e => setForm({...form, fazenda: e.target.value})} placeholder="Ex: Fazenda Santa Rita" required />
+                        </div>
+
+                        <div className="bg-white p-4 rounded-lg shadow-sm">
+                            <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wider">Dados dos Animais</h3>
+                            
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Sexo dos Animais</label>
+                                <div className="flex gap-3">
+                                    {['Macho', 'Fêmea'].map(option => (
+                                        <button
+                                            key={option}
+                                            type="button"
+                                            onClick={() => setForm({...form, sexo: option})}
+                                            className={`flex-1 py-3 rounded-lg border font-medium transition-all ${
+                                                form.sexo === option 
+                                                ? option === 'Fêmea' 
+                                                    ? 'bg-pink-50 border-pink-500 text-pink-700 ring-1 ring-pink-500' 
+                                                    : 'bg-blue-50 border-blue-500 text-blue-700 ring-1 ring-blue-500'
+                                                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {option}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <InputGroup label="Qtd. Cabeças" type="tel" value={form.qtd} onChange={e => setForm({...form, qtd: e.target.value})} placeholder="0" required />
+                                <InputGroup label="Peso Total (KG)" type="tel" value={form.pesoTotal} onChange={e => setForm({...form, pesoTotal: e.target.value})} placeholder="0.00" required />
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded mb-4 text-sm text-gray-600">
+                                Média estimada: <strong>{pesoMedio} kg</strong> / {(Number(pesoMedio) / 30).toFixed(1)} @
+                            </div>
+                            
+                            <InputGroup label="Valor Total da Compra (R$)" type="number" step="0.01" value={form.valorTotal} onChange={e => setForm({...form, valorTotal: e.target.value})} placeholder="0,00" required />
+                            <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+                                Preço médio: <strong>{formatCurrency(valorMedio)}</strong> por cabeça
+                            </div>
+                        </div>
+
+                        <InputGroup label="Observações" type="text" value={form.obs} onChange={e => setForm({...form, obs: e.target.value})} placeholder="Ex: Gado nelore, magro..." />
+
+                        <Button type="submit" className="mt-6" isLoading={isLoading}>Salvar Compra na Nuvem</Button>
+                    </form>
+                </div>
+            );
+        };
+
+        // 2. Modal de Observação
         const AddObservationModal = ({ lote, onClose, onSave, isLoading }) => {
             const [data, setData] = useState(new Date().toISOString().split('T')[0]);
             const [obs, setObs] = useState('');
@@ -202,23 +252,19 @@ service cloud.firestore {
             );
         };
 
-        // --- Componente Modal de Dossiê ---
+        // 3. Modal de Dossiê
         const DossierModal = ({ lote, historico, onClose, onDelete }) => {
             if (!lote) return null;
 
-            // Filtrar histórico relevante para este lote
             const loteHistorico = historico.filter(item => {
-                // Se for COMPRA, o ID do detalhe é o próprio ID do lote
                 if (item.tipo === 'COMPRA' && item.detalhes.id === lote.id) return true;
-                // Se for VENDA, MORTE ou OBSERVACAO, o ID do lote está dentro de loteSnapshot
                 if (['VENDA', 'MORTE', 'OBSERVACAO'].includes(item.tipo) && item.detalhes.loteSnapshot && item.detalhes.loteSnapshot.id === lote.id) return true;
                 return false;
-            }).sort((a, b) => new Date(b.data) - new Date(a.data)); // Mais recente primeiro
+            }).sort((a, b) => new Date(b.data) - new Date(a.data));
 
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                        {/* Header */}
                         <div className="bg-green-600 p-4 text-white flex justify-between items-center shrink-0">
                             <div>
                                 <h2 className="text-lg font-bold">Dossiê do Lote</h2>
@@ -229,7 +275,6 @@ service cloud.firestore {
                             </button>
                         </div>
 
-                        {/* Resumo do Lote */}
                         <div className="bg-green-50 p-4 border-b border-green-100 shrink-0">
                             <div className="grid grid-cols-3 gap-2 text-center">
                                 <div className="bg-white p-2 rounded border border-green-200">
@@ -252,14 +297,12 @@ service cloud.firestore {
                             )}
                         </div>
 
-                        {/* Timeline */}
                         <div className="overflow-y-auto p-4 space-y-4 flex-1">
                             {loteHistorico.length === 0 ? (
                                 <p className="text-center text-gray-400 py-4">Nenhum registro encontrado.</p>
                             ) : (
                                 loteHistorico.map(item => (
                                     <div key={item.id} className="relative pl-6 border-l-2 border-gray-200 pb-2 last:border-0 last:pb-0">
-                                        {/* Bolinha da Timeline */}
                                         <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white shadow-sm ${
                                             item.tipo === 'COMPRA' ? 'bg-blue-500' :
                                             item.tipo === 'VENDA' ? 'bg-green-500' : 
@@ -276,11 +319,11 @@ service cloud.firestore {
                                                 <span className="text-xs text-gray-400">{new Date(item.data).toLocaleDateString('pt-BR')}</span>
                                             </div>
                                             
-                                            {/* Botão de Excluir (Apenas para Observações) */}
+                                            {/* Ícone de Lixeira Vermelho Vivo */}
                                             {item.tipo === 'OBSERVACAO' && (
                                                 <button 
                                                     onClick={() => onDelete(item.id)}
-                                                    className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-50 rounded-full opacity-100 transition-all"
+                                                    className="absolute top-2 right-2 p-1.5 text-red-600 hover:text-red-800 hover:bg-red-100 rounded-full transition-all"
                                                     title="Excluir Observação"
                                                 >
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -326,7 +369,7 @@ service cloud.firestore {
             );
         };
 
-        // --- Componente de Autenticação (Login/Registro) ---
+        // 4. Tela de Autenticação
         const AuthScreen = ({ onLoginSuccess, showToast }) => {
             const [isRegister, setIsRegister] = useState(false);
             const [email, setEmail] = useState('');
@@ -403,6 +446,49 @@ service cloud.firestore {
             );
         };
 
+        // 5. Ajuda Permissão
+        const PermissionHelpModal = ({ onClose }) => (
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[9999] p-4 animate-fade-in">
+                <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-2xl overflow-y-auto max-h-[90vh]">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xl font-bold text-red-600 flex items-center gap-2">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            Falta de Permissão no Banco de Dados
+                        </h3>
+                        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+                    </div>
+                    
+                    <p className="text-gray-600 mb-4 text-sm">
+                        O Firebase bloqueou o salvamento porque suas <strong>Regras de Segurança</strong> estão no modo bloqueado padrão (<code>allow read, write: if false;</code>).
+                    </p>
+                    
+                    <p className="font-bold text-gray-800 mb-2">Para corrigir (leva 1 minuto):</p>
+                    <ol className="list-decimal pl-5 space-y-2 text-sm text-gray-700 mb-4">
+                        <li>Acesse o <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 underline font-bold">Console do Firebase</a>.</li>
+                        <li>No menu lateral, clique em <strong>Criação (Build)</strong> &gt; <strong>Firestore Database</strong>.</li>
+                        <li>Clique na aba <strong>Regras (Rules)</strong>.</li>
+                        <li>Apague tudo o que estiver lá e <strong>cole exatamente o código abaixo</strong>:</li>
+                    </ol>
+
+                    <div className="bg-gray-800 text-gray-100 p-3 rounded text-xs font-mono overflow-x-auto mb-4 relative group border border-gray-600">
+<pre>{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Permite que cada usuário leia/grave APENAS seus próprios dados
+    match /artifacts/{appId}/users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}`}</pre>
+                    </div>
+
+                    <p className="text-sm text-gray-500 mb-4 italic">Após colar, clique em "Publicar" no console do Firebase e tente salvar aqui novamente.</p>
+
+                    <Button onClick={onClose}>Entendi, vou atualizar lá</Button>
+                </div>
+            </div>
+        );
+
         // --- Componente Principal ---
         const App = () => {
             // Estados Principais
@@ -441,15 +527,11 @@ service cloud.firestore {
 
                 setLoading(true);
                 
-                // Paths: /artifacts/{appId}/users/{userId}/{collection}
-                // Usando sintaxe Compat (v8)
                 const lotesRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes');
                 const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
 
-                // Listener Lotes
                 const unsubscribeLotes = lotesRef.onSnapshot((snapshot) => {
                     const loadedLotes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    // Ordenar localmente por data de entrada (mais recente primeiro)
                     loadedLotes.sort((a, b) => new Date(b.dataEntrada) - new Date(a.dataEntrada));
                     setLotes(loadedLotes);
                     setLoading(false);
@@ -458,10 +540,8 @@ service cloud.firestore {
                     setLoading(false);
                 });
 
-                // Listener Histórico
                 const unsubscribeHist = histRef.onSnapshot((snapshot) => {
                     const loadedHist = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    // Ordenar localmente por data (mais recente primeiro)
                     loadedHist.sort((a, b) => new Date(b.data) - new Date(a.data));
                     setHistorico(loadedHist);
                 }, (error) => handleFirebaseError(error));
@@ -497,10 +577,10 @@ service cloud.firestore {
                         dataEntrada: data.data,
                         criador: data.criador,
                         fazenda: data.fazenda,
-                        sexo: data.sexo, // Novo campo
+                        sexo: data.sexo, 
                         qtdInicial: Number(data.qtd),
                         qtdAtual: Number(data.qtd),
-                        pesoTotalInicial: Number(data.pesoTotal), // em KG
+                        pesoTotalInicial: Number(data.pesoTotal), 
                         valorCompraTotal: Number(data.valorTotal),
                         observacoes: data.obs,
                         custoMedioCabeca: Number(data.valorTotal) / Number(data.qtd),
@@ -509,7 +589,6 @@ service cloud.firestore {
 
                     const docRef = await lotesRef.add(novoLote);
                     
-                    // Add Histórico
                     await histRef.add({
                         tipo: 'COMPRA',
                         data: data.data,
@@ -535,13 +614,11 @@ service cloud.firestore {
                     const novaQtd = lote.qtdAtual - Number(data.qtd);
                     const loteRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes').doc(lote.id);
                     
-                    // Atualiza o lote
                     await loteRef.update({
                         qtdAtual: novaQtd,
                         ativo: novaQtd > 0
                     });
 
-                    // Add Histórico
                     const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
                     await histRef.add({
                         tipo: 'MORTE',
@@ -565,13 +642,11 @@ service cloud.firestore {
                     const lote = lotes.find(l => l.id === data.loteId);
                     if (!lote) return;
 
-                    // Cálculos
                     const qtdVendida = Number(data.qtd);
                     const valorBrutoVenda = Number(data.valorTotalVenda);
                     const custosTotais = Number(data.frete) + Number(data.balanca) + Number(data.outrosCustos);
                     const valorLiquidoVenda = valorBrutoVenda - custosTotais;
                     
-                    // Custo Base proporcional
                     const custoBaseAnimaisVendidos = lote.custoMedioCabeca * qtdVendida;
                     const lucroOperacao = valorLiquidoVenda - custoBaseAnimaisVendidos;
 
@@ -586,11 +661,9 @@ service cloud.firestore {
                         parteMinha = valorLiquidoVenda; 
                     }
 
-                    // Dados Peso
                     const pesoMedioEntrada = lote.pesoTotalInicial / lote.qtdInicial;
                     const pesoMedioSaida = Number(data.pesoTotalVenda) / qtdVendida;
 
-                    // Atualizar Estoque no Firestore
                     const novaQtd = lote.qtdAtual - qtdVendida;
                     const loteRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes').doc(lote.id);
                     
@@ -644,7 +717,7 @@ service cloud.firestore {
                         createdAt: new Date().toISOString()
                     });
 
-                    setSelectedLoteObs(null); // Fecha o modal
+                    setSelectedLoteObs(null); 
                     showToast('Observação adicionada!');
                 } catch (err) {
                     handleFirebaseError(err);
@@ -669,7 +742,266 @@ service cloud.firestore {
                 }
             };
 
-            // --- Renderização de Telas ---
+            // Form de Venda (Definido dentro pois usa props simples, mas idealmente seria fora)
+            const VendaForm = () => {
+                const lotesAtivos = lotes.filter(l => l.ativo);
+                const [form, setForm] = useState({
+                    loteId: '',
+                    data: new Date().toISOString().split('T')[0],
+                    qtd: '',
+                    pesoTotalVenda: '',
+                    valorTotalVenda: '',
+                    frete: '0',
+                    balanca: '0',
+                    outrosCustos: '0'
+                });
+                const [saving, setSaving] = useState(false);
+
+                const loteSelecionado = lotes.find(l => l.id === form.loteId);
+
+                const qtdVendida = Number(form.qtd) || 0;
+                const pesoTotalVenda = Number(form.pesoTotalVenda) || 0;
+                
+                const pesoMedioEntrada = loteSelecionado ? (loteSelecionado.pesoTotalInicial / loteSelecionado.qtdInicial) : 0;
+                const pesoMedioSaida = qtdVendida > 0 ? (pesoTotalVenda / qtdVendida) : 0;
+                const ganhoPesoTotal = (pesoMedioSaida - pesoMedioEntrada) * qtdVendida;
+
+                const custoBase = loteSelecionado ? loteSelecionado.custoMedioCabeca * qtdVendida : 0;
+                const receitaLiquida = (Number(form.valorTotalVenda) || 0) - (Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos));
+                const lucro = receitaLiquida - custoBase;
+                const parteCriador = lucro > 0 ? lucro * 0.60 : 0;
+                const parteMinha = lucro > 0 ? custoBase + (lucro * 0.40) : receitaLiquida;
+
+                const handleSubmit = async (e) => {
+                    e.preventDefault();
+                    setSaving(true);
+                    await handleVenda(form);
+                    setSaving(false);
+                };
+
+                if (lotesAtivos.length === 0) return (
+                    <div className="text-center mt-10 p-4">
+                        <p className="text-gray-500 mb-4">Não há lotes com animais disponíveis para venda.</p>
+                        <Button onClick={() => setView('dashboard')}>Voltar</Button>
+                    </div>
+                );
+
+                return (
+                    <div className="animate-fade-in pb-20">
+                        <header className="flex items-center mb-6">
+                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            </button>
+                            <h1 className="text-xl font-bold text-gray-800">Registrar Venda</h1>
+                        </header>
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="bg-white p-4 rounded-lg shadow-sm">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Selecione o Lote</label>
+                                <select 
+                                    className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg mb-4"
+                                    value={form.loteId}
+                                    onChange={e => setForm({...form, loteId: e.target.value, qtd: ''})}
+                                    required
+                                >
+                                    <option value="">Selecione...</option>
+                                    {lotesAtivos.map(l => (
+                                        <option key={l.id} value={l.id}>{l.criador} ({l.qtdAtual} cabeças) - {l.fazenda}</option>
+                                    ))}
+                                </select>
+                                <InputGroup label="Data da Venda" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
+                            </div>
+
+                            {form.loteId && (
+                                <>
+                                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                                        <h3 className="text-sm font-semibold text-green-700 mb-4 uppercase">Dados da Negociação</h3>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <InputGroup 
+                                                label="Qtd. Vendida" 
+                                                type="tel" 
+                                                value={form.qtd} 
+                                                onChange={e => {
+                                                    const val = Math.min(Number(e.target.value), loteSelecionado.qtdAtual);
+                                                    setForm({...form, qtd: val});
+                                                }} 
+                                                placeholder={`Máx: ${loteSelecionado.qtdAtual}`}
+                                                required 
+                                            />
+                                            <InputGroup label="Peso Total Venda (KG)" type="tel" value={form.pesoTotalVenda} onChange={e => setForm({...form, pesoTotalVenda: e.target.value})} placeholder="Peso Balança" required />
+                                        </div>
+
+                                        {qtdVendida > 0 && pesoTotalVenda > 0 && (
+                                            <div className="mb-4 bg-blue-50 p-3 rounded text-sm text-blue-800 border border-blue-100">
+                                                <div className="flex justify-between mb-1">
+                                                    <span>Média Entrada:</span>
+                                                    <strong>{formatNumber(pesoMedioEntrada.toFixed(1))} kg</strong>
+                                                </div>
+                                                <div className="flex justify-between mb-1">
+                                                    <span>Média Saída:</span>
+                                                    <strong>{formatNumber(pesoMedioSaida.toFixed(1))} kg</strong>
+                                                </div>
+                                                <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 font-bold">
+                                                    <span>Ganho Peso Total:</span>
+                                                    <span>+{formatNumber(ganhoPesoTotal.toFixed(1))} kg</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <InputGroup label="Valor TOTAL da Venda (R$)" type="number" step="0.01" value={form.valorTotalVenda} onChange={e => setForm({...form, valorTotalVenda: e.target.value})} placeholder="Valor Bruto" required />
+                                    </div>
+
+                                    <div className="bg-white p-4 rounded-lg shadow-sm border border-orange-100">
+                                        <h3 className="text-sm font-semibold text-orange-700 mb-4 uppercase">Custos / Descontos</h3>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <InputGroup label="Frete" type="tel" value={form.frete} onChange={e => setForm({...form, frete: e.target.value})} />
+                                            <InputGroup label="Balança" type="tel" value={form.balanca} onChange={e => setForm({...form, balanca: e.target.value})} />
+                                            <InputGroup label="Outros" type="tel" value={form.outrosCustos} onChange={e => setForm({...form, outrosCustos: e.target.value})} />
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-gray-800 text-white p-4 rounded-lg shadow-lg mt-4">
+                                        <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase border-b border-gray-600 pb-2">Simulação de Acerto</h3>
+                                        
+                                        <div className="flex justify-between text-sm mb-1">
+                                            <span>Valor Bruto:</span>
+                                            <span>{formatCurrency(form.valorTotalVenda || 0)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm mb-1 text-red-300">
+                                            <span>(-) Custos Totais:</span>
+                                            <span>{formatCurrency((Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos)))}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm mb-3 text-red-300">
+                                            <span>(-) Custo Original:</span>
+                                            <span>{formatCurrency(custoBase)}</span>
+                                        </div>
+                                        
+                                        <div className="border-t border-gray-600 my-2 pt-2 flex justify-between font-bold text-green-400">
+                                            <span>Lucro Financeiro:</span>
+                                            <span>{formatCurrency(lucro)}</span>
+                                        </div>
+
+                                        <div className="mt-4 bg-gray-700 p-3 rounded-lg">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-sm text-gray-300">Parceiro (60% Lucro):</span>
+                                                <span className="font-bold text-lg">{formatCurrency(parteCriador)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center border-t border-gray-600 pt-2">
+                                                <span className="text-sm text-gray-300">Minha Parte (Custo + 40%):</span>
+                                                <span className="font-bold text-xl text-green-400">{formatCurrency(parteMinha)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <Button type="submit" variant="primary" className="mt-4 mb-8" isLoading={saving}>Confirmar Venda e Baixar Estoque</Button>
+                                </>
+                            )}
+                        </form>
+                    </div>
+                );
+            };
+
+            const MorteForm = () => {
+                const lotesAtivos = lotes.filter(l => l.ativo);
+                const [form, setForm] = useState({ loteId: '', data: new Date().toISOString().split('T')[0], qtd: '1', obs: '' });
+                const [saving, setSaving] = useState(false);
+
+                const handleSubmit = async (e) => {
+                    e.preventDefault();
+                    setSaving(true);
+                    await handleMorte(form);
+                    setSaving(false);
+                };
+
+                if (lotesAtivos.length === 0) return <div className="p-4 text-center text-gray-500">Sem gado no estoque. <Button onClick={()=>setView('dashboard')} className="mt-4">Voltar</Button></div>;
+
+                return (
+                    <div className="animate-fade-in pb-20">
+                         <header className="flex items-center mb-6">
+                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            </button>
+                            <h1 className="text-xl font-bold text-red-600">Registrar Morte</h1>
+                        </header>
+                        <form onSubmit={handleSubmit} className="bg-white p-4 rounded-lg shadow-sm space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Lote</label>
+                                <select className="w-full p-3 bg-gray-50 border rounded-lg" value={form.loteId} onChange={e => setForm({...form, loteId: e.target.value})} required>
+                                    <option value="">Selecione...</option>
+                                    {lotesAtivos.map(l => <option key={l.id} value={l.id}>{l.criador} - Estoque: {l.qtdAtual}</option>)}
+                                </select>
+                            </div>
+                            <InputGroup label="Data" type="date" value={form.data} onChange={e => setForm({...form, data: e.target.value})} required />
+                            <InputGroup label="Quantidade Morta" type="tel" value={form.qtd} onChange={e => setForm({...form, qtd: e.target.value})} required />
+                            <InputGroup label="Causa / Observação" value={form.obs} onChange={e => setForm({...form, obs: e.target.value})} placeholder="Picada de cobra, doença, etc." required />
+                            <Button type="submit" variant="danger" isLoading={saving}>Confirmar Baixa</Button>
+                        </form>
+                    </div>
+                );
+            };
+
+            const HistoricoView = () => {
+                return (
+                    <div className="animate-fade-in pb-20">
+                        <header className="flex items-center mb-6">
+                            <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                            </button>
+                            <h1 className="text-xl font-bold text-gray-800">Histórico e Finanças</h1>
+                        </header>
+
+                        <div className="space-y-4">
+                            {historico.length === 0 ? (
+                                <p className="text-center text-gray-500 py-8">Nenhuma movimentação registrada.</p>
+                            ) : (
+                                historico.map(item => (
+                                    <div key={item.id} className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-l-gray-300 relative overflow-hidden">
+                                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                                            item.tipo === 'VENDA' ? 'bg-green-500' : 
+                                            item.tipo === 'COMPRA' ? 'bg-blue-500' : 'bg-red-500'
+                                        }`}></div>
+                                        
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${
+                                                item.tipo === 'VENDA' ? 'bg-green-100 text-green-800' : 
+                                                item.tipo === 'COMPRA' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
+                                            }`}>{item.tipo}</span>
+                                            <span className="text-xs text-gray-500">{new Date(item.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                        </div>
+                                        
+                                        <h3 className="font-semibold text-gray-800">{item.descricao}</h3>
+                                        
+                                        {item.tipo === 'VENDA' && (
+                                            <div className="mt-2 text-sm bg-gray-50 p-2 rounded">
+                                                {item.detalhes.pesoMedioSaida && (
+                                                     <div className="flex justify-between text-xs text-gray-500 mb-2 border-b border-gray-200 pb-1">
+                                                        <span>Ganho Peso:</span> 
+                                                        <span>{formatNumber((item.detalhes.ganhoPesoTotal).toFixed(1))} kg ({(item.detalhes.pesoMedioSaida - item.detalhes.pesoMedioEntrada).toFixed(1)}/cb)</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between"><span>Bruto:</span> <span>{formatCurrency(item.detalhes.valorTotalVenda)}</span></div>
+                                                <div className="flex justify-between text-red-500"><span>Custos:</span> <span>-{formatCurrency(item.detalhes.custosOperacionais)}</span></div>
+                                                <div className="flex justify-between font-bold border-t border-gray-200 mt-1 pt-1">
+                                                    <span>Parte Criador:</span> <span className="text-gray-600">{formatCurrency(item.detalhes.pagamentoCriador)}</span>
+                                                </div>
+                                                <div className="flex justify-between font-bold text-green-700">
+                                                    <span>Minha Parte:</span> <span>{formatCurrency(item.detalhes.meuRetorno)}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {item.tipo === 'COMPRA' && (
+                                            <div className="mt-2 text-sm text-gray-600">
+                                                Investimento: <strong>{formatCurrency(Math.abs(item.valor))}</strong>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                );
+            };
 
             const renderDashboard = () => {
                 if (loading) return <div className="flex justify-center py-10"><div className="spinner"></div></div>;
@@ -732,7 +1064,7 @@ service cloud.firestore {
                                 lotes.filter(l => l.ativo).map(lote => (
                                     <Card key={lote.id} className="mb-3 border-l-4 border-l-green-500 relative">
                                         <div className="flex justify-between items-start">
-                                            <div className="pr-10"> {/* Padding right para não sobrepor o botão */}
+                                            <div className="pr-10">
                                                 <h3 className="font-bold text-gray-800 flex items-center gap-2">
                                                     {lote.criador}
                                                     {lote.sexo && (
@@ -749,7 +1081,6 @@ service cloud.firestore {
                                             <span>Entrada: {new Date(lote.dataEntrada + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
                                         </div>
 
-                                        {/* Ações do Card */}
                                         <div className="absolute right-4 bottom-4 flex gap-2">
                                             <button 
                                                 onClick={() => setSelectedLoteObs(lote)}
@@ -774,22 +1105,18 @@ service cloud.firestore {
                 );
             };
 
-            // --- Renderização Principal ---
             return (
                 <div className="max-w-md mx-auto min-h-screen bg-gray-50 relative">
-                    {/* Toast Notification */}
                     {toast && (
                         <div className={`fixed top-4 left-4 right-4 z-50 p-4 rounded shadow-lg text-white text-center transform transition-all duration-300 ${toast.type === 'error' ? 'bg-red-500' : 'bg-gray-800'}`}>
                             {toast.msg}
                         </div>
                     )}
 
-                    {/* Modal de Ajuda de Permissão */}
                     {showPermissionError && (
                         <PermissionHelpModal onClose={() => setShowPermissionError(false)} />
                     )}
 
-                    {/* Modal de Nova Observação */}
                     {selectedLoteObs && (
                         <AddObservationModal 
                             lote={selectedLoteObs} 
@@ -799,7 +1126,6 @@ service cloud.firestore {
                         />
                     )}
 
-                    {/* Modal de Dossiê */}
                     {selectedLoteDossier && (
                         <DossierModal 
                             lote={selectedLoteDossier} 
@@ -815,13 +1141,22 @@ service cloud.firestore {
                         <>
                             <div className="p-4">
                                 {view === 'dashboard' && renderDashboard()}
-                                {view === 'entry' && <CompraForm />}
+                                {view === 'entry' && (
+                                    <CompraForm 
+                                        onBack={() => setView('dashboard')} 
+                                        onSubmit={async (data) => {
+                                            setLoading(true);
+                                            await handleCompra(data);
+                                            setLoading(false);
+                                        }} 
+                                        isLoading={loading} 
+                                    />
+                                )}
                                 {view === 'sale' && <VendaForm />}
                                 {view === 'death' && <MorteForm />}
                                 {view === 'history' && <HistoricoView />}
                             </div>
 
-                            {/* Bottom Navigation */}
                             <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pb-safe flex justify-around items-center h-16 max-w-md mx-auto z-40">
                                 <button onClick={() => setView('dashboard')} className={`flex flex-col items-center p-2 ${view === 'dashboard' ? 'text-green-600' : 'text-gray-400'}`}>
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
