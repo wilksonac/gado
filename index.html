@@ -359,6 +359,11 @@
                                                         <span>Méd. Saída: {formatNumber(item.detalhes.pesoMedioSaida?.toFixed(1))}kg</span>
                                                         <span className="text-green-600 font-bold">Lucro: {formatCurrency(item.detalhes.lucroTotal)}</span>
                                                     </div>
+                                                    {item.detalhes.precoKg && (
+                                                        <p className="text-xs text-gray-500 mt-1">
+                                                            Preço/kg: {formatCurrency(item.detalhes.precoKg)} (Líquido)
+                                                        </p>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -645,11 +650,21 @@ service cloud.firestore {
                     if (!lote) return;
 
                     const qtdVendida = Number(data.qtd);
-                    const valorBrutoVenda = Number(data.valorTotalVenda);
-                    const custosTotais = Number(data.frete) + Number(data.balanca) + Number(data.outrosCustos);
-                    const valorLiquidoVenda = valorBrutoVenda - custosTotais;
                     
+                    // Cálculo do valor baseado no peso líquido (50% rendimento)
+                    const pesoBrutoTotal = Number(data.pesoTotalVenda);
+                    const precoPorKg = Number(data.precoKg);
+                    const pesoLiquido = pesoBrutoTotal / 2;
+                    const valorTotalCalculado = pesoLiquido * precoPorKg;
+
+                    // Custos
+                    const custosTotais = Number(data.frete) + Number(data.balanca) + Number(data.outrosCustos);
+                    const valorLiquidoVenda = valorTotalCalculado - custosTotais;
+                    
+                    // Custo Base proporcional (Média de Entrada * Qtd Vendida)
                     const custoBaseAnimaisVendidos = lote.custoMedioCabeca * qtdVendida;
+                    
+                    // Lucro
                     const lucroOperacao = valorLiquidoVenda - custoBaseAnimaisVendidos;
 
                     let parteCriador = 0;
@@ -659,12 +674,13 @@ service cloud.firestore {
                         parteCriador = lucroOperacao * 0.60;
                         parteMinha = custoBaseAnimaisVendidos + (lucroOperacao * 0.40); 
                     } else {
+                        // Sem lucro: Criador recebe 0, investidor recupera o que der
                         parteCriador = 0;
                         parteMinha = valorLiquidoVenda; 
                     }
 
                     const pesoMedioEntrada = lote.pesoTotalInicial / lote.qtdInicial;
-                    const pesoMedioSaida = Number(data.pesoTotalVenda) / qtdVendida;
+                    const pesoMedioSaida = pesoBrutoTotal / qtdVendida;
 
                     const novaQtd = lote.qtdAtual - qtdVendida;
                     const loteRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('lotes').doc(lote.id);
@@ -676,6 +692,7 @@ service cloud.firestore {
 
                     const resumoVenda = {
                         ...data,
+                        valorTotalVenda: valorTotalCalculado,
                         custoBase: custoBaseAnimaisVendidos,
                         custosOperacionais: custosTotais,
                         lucroTotal: lucroOperacao,
@@ -684,7 +701,8 @@ service cloud.firestore {
                         pesoMedioEntrada: pesoMedioEntrada,
                         pesoMedioSaida: pesoMedioSaida,
                         ganhoPesoTotal: (pesoMedioSaida - pesoMedioEntrada) * qtdVendida,
-                        loteSnapshot: lote
+                        loteSnapshot: lote,
+                        precoKg: precoPorKg
                     };
 
                     const histRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('historico');
@@ -752,10 +770,11 @@ service cloud.firestore {
                     data: new Date().toISOString().split('T')[0],
                     qtd: '',
                     pesoTotalVenda: '',
-                    valorTotalVenda: '',
+                    precoKg: '',
                     frete: '0',
                     balanca: '0',
-                    outrosCustos: '0'
+                    outrosCustos: '0',
+                    obs: ''
                 });
                 const [saving, setSaving] = useState(false);
 
@@ -763,14 +782,23 @@ service cloud.firestore {
 
                 const qtdVendida = Number(form.qtd) || 0;
                 const pesoTotalVenda = Number(form.pesoTotalVenda) || 0;
+                const precoKg = Number(form.precoKg) || 0;
                 
+                // Cálculo Valor Venda: (Peso Bruto / 2) * Preço Kg
+                const pesoLiquido = pesoTotalVenda / 2;
+                const valorTotalVenda = pesoLiquido * precoKg;
+
+                // Médias
                 const pesoMedioEntrada = loteSelecionado ? (loteSelecionado.pesoTotalInicial / loteSelecionado.qtdInicial) : 0;
                 const pesoMedioSaida = qtdVendida > 0 ? (pesoTotalVenda / qtdVendida) : 0;
                 const ganhoPesoTotal = (pesoMedioSaida - pesoMedioEntrada) * qtdVendida;
 
+                // Financeiro
                 const custoBase = loteSelecionado ? loteSelecionado.custoMedioCabeca * qtdVendida : 0;
-                const receitaLiquida = (Number(form.valorTotalVenda) || 0) - (Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos));
+                const custosOperacionais = Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos);
+                const receitaLiquida = valorTotalVenda - custosOperacionais;
                 const lucro = receitaLiquida - custoBase;
+                
                 const parteCriador = lucro > 0 ? lucro * 0.60 : 0;
                 const parteMinha = lucro > 0 ? custoBase + (lucro * 0.40) : receitaLiquida;
 
@@ -830,27 +858,36 @@ service cloud.firestore {
                                                 placeholder={`Máx: ${loteSelecionado.qtdAtual}`}
                                                 required 
                                             />
-                                            <InputGroup label="Peso Total Venda (KG)" type="tel" value={form.pesoTotalVenda} onChange={e => setForm({...form, pesoTotalVenda: e.target.value})} placeholder="Peso Balança" required />
+                                            <InputGroup label="Peso Total Bruto (KG)" type="tel" value={form.pesoTotalVenda} onChange={e => setForm({...form, pesoTotalVenda: e.target.value})} placeholder="Peso Balança" required />
                                         </div>
 
+                                        <InputGroup 
+                                            label="Preço por Kg (R$)" 
+                                            type="number" 
+                                            step="0.01" 
+                                            value={form.precoKg} 
+                                            onChange={e => setForm({...form, precoKg: e.target.value})} 
+                                            placeholder="Ex: 20,00" 
+                                            required 
+                                        />
+
+                                        {/* Exibição das Médias de Peso */}
                                         {qtdVendida > 0 && pesoTotalVenda > 0 && (
                                             <div className="mb-4 bg-blue-50 p-3 rounded text-sm text-blue-800 border border-blue-100">
                                                 <div className="flex justify-between mb-1">
-                                                    <span>Média Entrada:</span>
-                                                    <strong>{formatNumber(pesoMedioEntrada.toFixed(1))} kg</strong>
+                                                    <span>Peso Bruto Total:</span>
+                                                    <strong>{formatNumber(pesoTotalVenda)} kg</strong>
                                                 </div>
                                                 <div className="flex justify-between mb-1">
-                                                    <span>Média Saída:</span>
-                                                    <strong>{formatNumber(pesoMedioSaida.toFixed(1))} kg</strong>
+                                                    <span>Peso Líquido (50%):</span>
+                                                    <strong>{formatNumber(pesoLiquido)} kg</strong>
                                                 </div>
                                                 <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 font-bold">
-                                                    <span>Ganho Peso Total:</span>
-                                                    <span>+{formatNumber(ganhoPesoTotal.toFixed(1))} kg</span>
+                                                    <span>Valor Total Calculado:</span>
+                                                    <span>{formatCurrency(valorTotalVenda)}</span>
                                                 </div>
                                             </div>
                                         )}
-
-                                        <InputGroup label="Valor TOTAL da Venda (R$)" type="number" step="0.01" value={form.valorTotalVenda} onChange={e => setForm({...form, valorTotalVenda: e.target.value})} placeholder="Valor Bruto" required />
                                     </div>
 
                                     <div className="bg-white p-4 rounded-lg shadow-sm border border-orange-100">
@@ -862,24 +899,34 @@ service cloud.firestore {
                                         </div>
                                     </div>
 
+                                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                                        <textarea
+                                            className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 outline-none appearance-none transition-colors bg-gray-50 focus:bg-white h-24 resize-none"
+                                            placeholder="Ex: Destino, comprador, condições..."
+                                            value={form.obs}
+                                            onChange={e => setForm({...form, obs: e.target.value})}
+                                        ></textarea>
+                                    </div>
+
                                     <div className="bg-gray-800 text-white p-4 rounded-lg shadow-lg mt-4">
                                         <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase border-b border-gray-600 pb-2">Simulação de Acerto</h3>
                                         
                                         <div className="flex justify-between text-sm mb-1">
-                                            <span>Valor Bruto:</span>
-                                            <span>{formatCurrency(form.valorTotalVenda || 0)}</span>
+                                            <span>Valor Bruto (Calc):</span>
+                                            <span>{formatCurrency(valorTotalVenda)}</span>
                                         </div>
                                         <div className="flex justify-between text-sm mb-1 text-red-300">
                                             <span>(-) Custos Totais:</span>
-                                            <span>{formatCurrency((Number(form.frete) + Number(form.balanca) + Number(form.outrosCustos)))}</span>
+                                            <span>{formatCurrency(custosOperacionais)}</span>
                                         </div>
                                         <div className="flex justify-between text-sm mb-3 text-red-300">
-                                            <span>(-) Custo Original:</span>
+                                            <span>(-) Custo Base (Gado):</span>
                                             <span>{formatCurrency(custoBase)}</span>
                                         </div>
                                         
                                         <div className="border-t border-gray-600 my-2 pt-2 flex justify-between font-bold text-green-400">
-                                            <span>Lucro Financeiro:</span>
+                                            <span>Lucro Líquido:</span>
                                             <span>{formatCurrency(lucro)}</span>
                                         </div>
 
