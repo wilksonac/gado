@@ -26,7 +26,8 @@
     <style>
         /* Ajustes Mobile Específicos */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
-        .tab-content { padding-bottom: 80px; } /* Espaço para menu inferior */
+        /* Remove estilo nativo de data no iOS para respeitar altura */
+        input[type="date"] { -webkit-appearance: none; appearance: none; min-height: 48px; } 
         input, select, textarea { font-size: 16px !important; } /* Evita zoom no iOS */
         .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #16a34a; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -98,6 +99,7 @@
             );
         };
 
+        // InputGroup atualizado com h-12 e appearance-none
         const InputGroup = ({ label, type = "text", value, onChange, placeholder, step, required = false, min }) => (
             <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
@@ -109,7 +111,7 @@
                     step={step}
                     min={min}
                     required={required}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-colors bg-gray-50 focus:bg-white"
+                    className="w-full h-12 px-4 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none appearance-none transition-colors bg-gray-50 focus:bg-white"
                 />
             </div>
         );
@@ -148,7 +150,7 @@
             const valorMedio = qtd > 0 ? (valorTotal / qtd) : 0;
 
             return (
-                <div className="animate-fade-in pb-20">
+                <div className="animate-fade-in">
                      <header className="flex items-center mb-6">
                         <button onClick={onBack} className="mr-3 p-2 rounded-full hover:bg-gray-200">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -175,7 +177,7 @@
                                             key={option}
                                             type="button"
                                             onClick={() => setForm({...form, sexo: option})}
-                                            className={`flex-1 py-3 rounded-lg border font-medium transition-all ${
+                                            className={`flex-1 h-12 rounded-lg border font-medium transition-all flex items-center justify-center ${
                                                 form.sexo === option 
                                                 ? option === 'Fêmea' 
                                                     ? 'bg-pink-50 border-pink-500 text-pink-700 ring-1 ring-pink-500' 
@@ -234,7 +236,7 @@
                             <div className="mb-4">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Observação</label>
                                 <textarea
-                                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 outline-none transition-colors bg-gray-50 focus:bg-white h-32 resize-none"
+                                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 outline-none transition-colors bg-gray-50 focus:bg-white h-32 resize-none appearance-none"
                                     placeholder="Ex: Vacinação de aftosa realizada, trocou de pasto, etc."
                                     value={obs}
                                     onChange={e => setObs(e.target.value)}
@@ -787,7 +789,7 @@ service cloud.firestore {
                 );
 
                 return (
-                    <div className="animate-fade-in pb-20">
+                    <div className="animate-fade-in">
                         <header className="flex items-center mb-6">
                             <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -799,7 +801,7 @@ service cloud.firestore {
                             <div className="bg-white p-4 rounded-lg shadow-sm">
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Selecione o Lote</label>
                                 <select 
-                                    className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg mb-4"
+                                    className="w-full h-12 px-4 border border-gray-300 rounded-lg mb-4 appearance-none bg-white"
                                     value={form.loteId}
                                     onChange={e => setForm({...form, loteId: e.target.value, qtd: ''})}
                                     required
@@ -916,7 +918,7 @@ service cloud.firestore {
                 if (lotesAtivos.length === 0) return <div className="p-4 text-center text-gray-500">Sem gado no estoque. <Button onClick={()=>setView('dashboard')} className="mt-4">Voltar</Button></div>;
 
                 return (
-                    <div className="animate-fade-in pb-20">
+                    <div className="animate-fade-in">
                          <header className="flex items-center mb-6">
                             <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -926,7 +928,7 @@ service cloud.firestore {
                         <form onSubmit={handleSubmit} className="bg-white p-4 rounded-lg shadow-sm space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Lote</label>
-                                <select className="w-full p-3 bg-gray-50 border rounded-lg" value={form.loteId} onChange={e => setForm({...form, loteId: e.target.value})} required>
+                                <select className="w-full h-12 px-4 border border-gray-300 rounded-lg mb-4 appearance-none bg-white" value={form.loteId} onChange={e => setForm({...form, loteId: e.target.value})} required>
                                     <option value="">Selecione...</option>
                                     {lotesAtivos.map(l => <option key={l.id} value={l.id}>{l.criador} - Estoque: {l.qtdAtual}</option>)}
                                 </select>
@@ -942,7 +944,7 @@ service cloud.firestore {
 
             const HistoricoView = () => {
                 return (
-                    <div className="animate-fade-in pb-20">
+                    <div className="animate-fade-in">
                         <header className="flex items-center mb-6">
                             <button onClick={() => setView('dashboard')} className="mr-3 p-2 rounded-full hover:bg-gray-200">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -1139,7 +1141,7 @@ service cloud.firestore {
                         <AuthScreen onLoginSuccess={setUser} showToast={showToast} />
                     ) : (
                         <>
-                            <div className="p-4">
+                            <div className="p-4 pb-28">
                                 {view === 'dashboard' && renderDashboard()}
                                 {view === 'entry' && (
                                     <CompraForm 
