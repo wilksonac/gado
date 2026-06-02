@@ -671,8 +671,8 @@ service cloud.firestore {
                     let parteMinha = 0;
 
                     if (lucroOperacao > 0) {
-                        parteCriador = lucroOperacao * 0.60;
-                        parteMinha = custoBaseAnimaisVendidos + (lucroOperacao * 0.40); 
+                        parteCriador = lucroOperacao * 0.55;
+                        parteMinha = custoBaseAnimaisVendidos + (lucroOperacao * 0.45); 
                     } else {
                         // Sem lucro: Criador recebe 0, investidor recupera o que der
                         parteCriador = 0;
@@ -799,8 +799,8 @@ service cloud.firestore {
                 const receitaLiquida = valorTotalVenda - custosOperacionais;
                 const lucro = receitaLiquida - custoBase;
                 
-                const parteCriador = lucro > 0 ? lucro * 0.60 : 0;
-                const parteMinha = lucro > 0 ? custoBase + (lucro * 0.40) : receitaLiquida;
+                const parteCriador = lucro > 0 ? lucro * 0.55 : 0;
+                const parteMinha = lucro > 0 ? custoBase + (lucro * 0.45) : receitaLiquida;
 
                 const handleSubmit = async (e) => {
                     e.preventDefault();
